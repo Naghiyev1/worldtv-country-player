@@ -1,20 +1,17 @@
-# WorldTV v1.0 — Country IPTV Player
+# WorldTV v1.0.1 — Quota Fix
 
 A clean browser TV player for the public IPTV-org M3U playlist.
 
-## What it does
+## What changed in v1.0.1
 
-- Fetches playlist from https://iptv-org.github.io/iptv/index.m3u
-- Parses M3U channels
-- Country selector
-- Category selector
-- Search
-- HLS playback with HLS.js
-- Save favourites
-- Recently watched
-- Open stream fallback
-- Cached playlist fallback
-- Mobile-first layout
+- Removed full playlist caching in localStorage
+- Fixed “The quota has been exceeded” error
+- Keeps favourites and recent channels in localStorage
+- Fetches IPTV-org playlist fresh on load
+- Keeps HLS.js playback
+- Keeps country/category/search/player logic
+- Cache updated to v1.0.1
+- JavaScript syntax checked successfully
 
 ## Important notes
 
@@ -27,11 +24,13 @@ Some channels will fail. That is normal for public IPTV lists.
 Upload all files to your repo root:
 
 - index.html
-- style-v1-0.css
-- app-v1-0.js
+- style-v1-0-1.css
+- app-v1-0-1.js
 - style.css
 - app.js
 - README.md
 - icon.svg
 - manifest.json
 - service-worker.js
+
+After upload, hard refresh. If the old version remains, clear site data because the previous service worker may still be active.
