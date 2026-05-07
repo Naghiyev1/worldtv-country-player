@@ -1,1 +1,16 @@
-{"name":"WorldTV — Country IPTV Player","short_name":"WorldTV","description":"Choose a country and watch public IPTV streams.","start_url":".","display":"standalone","background_color":"#07111f","theme_color":"#07111f","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml"}]}
+{
+  "name": "WorldTV \u2014 Country IPTV Player",
+  "short_name": "WorldTV",
+  "description": "Choose a country and watch public IPTV streams.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
