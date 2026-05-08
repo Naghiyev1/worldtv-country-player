@@ -1,420 +1,56 @@
-
-const INDEX_PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.m3u";
-const COUNTRY_PLAYLIST_BASE = "https://iptv-org.github.io/iptv/countries/";
-const APP_VERSION = "1.1";
-const COUNTRY_CODES = ["AF", "AL", "DZ", "AD", "AO", "AR", "AM", "AW", "AU", "AT", "AZ", "BS", "BH", "BD", "BB", "BY", "BE", "BZ", "BJ", "BM", "BT", "BO", "BA", "BW", "BR", "BN", "BG", "BF", "BI", "KH", "CM", "CA", "CV", "KY", "CF", "TD", "CL", "CN", "CO", "CR", "HR", "CU", "CW", "CY", "CZ", "DK", "DO", "EC", "EG", "SV", "EE", "ET", "FI", "FR", "GE", "DE", "GH", "GR", "GT", "HK", "HU", "IS", "IN", "ID", "IR", "IQ", "IE", "IL", "IT", "JM", "JP", "JO", "KZ", "KE", "KR", "KW", "KG", "LA", "LV", "LB", "LT", "LU", "MO", "MK", "MY", "MX", "MD", "MN", "ME", "MA", "MM", "NP", "NL", "NZ", "NG", "NO", "PK", "PS", "PA", "PY", "PE", "PH", "PL", "PT", "PR", "QA", "RO", "RU", "SA", "RS", "SG", "SK", "SI", "ZA", "ES", "LK", "SE", "CH", "SY", "TW", "TJ", "TH", "TN", "TR", "UA", "AE", "GB", "US", "UY", "UZ", "VE", "VN", "YE"];
-const STORAGE = {
-  favs: "worldtv_favourites_v1",
-  recent: "worldtv_recent_v1",
-  country: "worldtv_last_country_v1"
+const APP_VERSION="1.2";
+const SOURCES={
+ "iptv-country":{label:"IPTV-org · Country playlists",desc:"Best for country browsing. Loads /countries/xx.m3u.",type:"country",url:"https://iptv-org.github.io/iptv/countries/{country}.m3u",defaultCountry:"ES"},
+ "iptv-index":{label:"IPTV-org · Full index",desc:"Full global index. More channels, slower and messier.",type:"global",url:"https://iptv-org.github.io/iptv/index.m3u"},
+ "tdt-tv":{label:"TDTChannels · TV",desc:"Spain-focused TV list with some international channels.",type:"global",forcedCountry:"ES",url:"https://www.tdtchannels.com/lists/tv.m3u8"},
+ "tdt-tv-radio":{label:"TDTChannels · TV + Radio",desc:"Combined TDTChannels TV and radio list.",type:"global",forcedCountry:"ES",url:"https://www.tdtchannels.com/lists/tvradio.m3u8"},
+ "tdt-tv-mpd":{label:"TDTChannels · TV M3U8 + MPD",desc:"Experimental TDTChannels list with M3U8 plus MPD streams.",type:"global",forcedCountry:"ES",url:"https://www.tdtchannels.com/lists/tv.m3u8_mpd"}
 };
-
-const regionNames = typeof Intl !== "undefined" && Intl.DisplayNames ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
-const state = {
-  channels: [],
-  filtered: [],
-  country: localStorage.getItem(STORAGE.country) || "All",
-  group: "All",
-  query: "",
-  section: "browse",
-  active: null,
-  loading: true,
-  error: "",
-  hls: null,
-  currentPlaylistUrl: ""
-};
-
-const $ = s => document.querySelector(s);
-const $$ = s => Array.from(document.querySelectorAll(s));
-const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#039;" }[c]));
-const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-const safeParse = (k,f) => { try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : f; } catch { return f; } };
-const saveJSON = (k,v) => localStorage.setItem(k, JSON.stringify(v));
-const channelId = c => `${c.name}::${c.url}`;
-
-function getFavs(){ return new Set(safeParse(STORAGE.favs, [])); }
-function setFavs(s){ saveJSON(STORAGE.favs, [...s]); }
-function getRecent(){ return safeParse(STORAGE.recent, []); }
-function setRecent(arr){ saveJSON(STORAGE.recent, arr.slice(0, 30)); }
-function countryLabel(code){
-  if(!code || code === "All") return "All countries";
-  if(code === "INT") return "International";
-  try { return regionNames ? regionNames.of(code) || code : code; } catch { return code; }
-}
-function playlistUrlForCountry(code){
-  return code === "All" ? INDEX_PLAYLIST_URL : `${COUNTRY_PLAYLIST_BASE}${String(code).toLowerCase()}.m3u`;
-}
-function toggleFav(c){ const favs=getFavs(); const key=channelId(c); favs.has(key) ? favs.delete(key) : favs.add(key); setFavs(favs); render(); }
-
-function parseAttrs(line){
-  const attrs = {};
-  const re = /([\w-]+)="([^"]*)"/g;
-  let m;
-  while((m = re.exec(line))) attrs[m[1]] = m[2];
-  return attrs;
-}
-
-function inferCountry(attrs, name, forcedCountry){
-  if(forcedCountry && forcedCountry !== "All") return forcedCountry;
-  const explicit = attrs["tvg-country"] || attrs["country"] || attrs["countries"] || "";
-  const first = explicit.split(/[;,]/).map(x => x.trim().toUpperCase()).find(x => /^[A-Z]{2}$/.test(x));
-  return first || "INT";
-}
-
-function parseM3U(text, forcedCountry="All"){
-  const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-  const channels = [];
-
-  for(let i=0;i<lines.length;i++){
-    const line = lines[i];
-    if(!line.startsWith("#EXTINF")) continue;
-
-    const attrs = parseAttrs(line);
-    const comma = line.indexOf(",");
-    const displayName = comma >= 0 ? line.slice(comma + 1).trim() : "";
-    let url = "";
-
-    for(let j=i+1;j<Math.min(lines.length, i+7);j++){
-      if(lines[j] && !lines[j].startsWith("#")){
-        url = lines[j].trim();
-        break;
-      }
-    }
-
-    if(!url || !/^https?:\/\//i.test(url)) continue;
-
-    const name = attrs["tvg-name"] || displayName || attrs["tvg-id"] || "Unknown channel";
-    const group = attrs["group-title"] || "General";
-    const logo = attrs["tvg-logo"] || "";
-    const country = inferCountry(attrs, name, forcedCountry);
-
-    channels.push({
-      name, group, logo, url, country,
-      countryName: countryLabel(country),
-      tvgId: attrs["tvg-id"] || "",
-      lang: attrs["tvg-language"] || attrs["language"] || "",
-      raw: line
-    });
-  }
-
-  return channels.filter(c => c.name && c.url).sort((a,b) => a.name.localeCompare(b.name));
-}
-
-async function loadPlaylist(force=false){
-  state.loading = true;
-  state.error = "";
-  state.channels = [];
-  state.filtered = [];
-  state.currentPlaylistUrl = playlistUrlForCountry(state.country);
-  renderShell();
-
-  try{
-    const r = await fetch(state.currentPlaylistUrl, { cache: force ? "reload" : "no-store" });
-    if(!r.ok) throw new Error(`Playlist returned ${r.status}`);
-    const text = await r.text();
-
-    state.channels = parseM3U(text, state.country);
-    state.loading = false;
-    applyFilters();
-    render();
-  }catch(err){
-    state.loading = false;
-    state.error = `Could not load ${countryLabel(state.country)} playlist. Try refreshing, choose All countries, or try another country. Details: ${err.message || err}`;
-    render();
-  }
-}
-
-function currentGroups(){
-  return ["All", ...new Set(state.channels.map(c => c.group || "General"))].sort((a,b) => a.localeCompare(b));
-}
-
-function applyFilters(){
-  const q = norm(state.query);
-  state.filtered = state.channels.filter(c => {
-    const groupOk = state.group === "All" || c.group === state.group;
-    const text = norm([c.name,c.group,c.countryName,c.lang,c.tvgId].join(" "));
-    return groupOk && (!q || text.includes(q));
-  });
-}
-
-function addRecent(c){
-  const rec = getRecent().filter(x => x.id !== channelId(c));
-  rec.unshift({ id: channelId(c), name:c.name, country:c.country, countryName:c.countryName, group:c.group, logo:c.logo, url:c.url, at: new Date().toISOString() });
-  setRecent(rec);
-}
-
-function playChannel(c){
-  state.active = c;
-  addRecent(c);
-  renderPlayer();
-  setTimeout(() => attachPlayer(c), 50);
-}
-
-function attachPlayer(c){
-  const video = $("#videoPlayer");
-  if(!video || !c) return;
-
-  if(state.hls){
-    try { state.hls.destroy(); } catch {}
-    state.hls = null;
-  }
-
-  const src = c.url;
-  video.poster = "";
-  video.removeAttribute("src");
-  video.load();
-
-  const isHls = /\.m3u8($|\?)/i.test(src) || src.includes(".m3u8");
-  if(isHls && window.Hls && Hls.isSupported()){
-    const hls = new Hls({ lowLatencyMode:true, backBufferLength:60, maxBufferLength:30, enableWorker:true });
-    state.hls = hls;
-    hls.loadSource(src);
-    hls.attachMedia(video);
-    hls.on(Hls.Events.ERROR, (_, data) => {
-      if(data?.fatal) showPlayerError("This stream failed in the browser. Try another channel or open the stream directly.");
-    });
-  } else if(video.canPlayType("application/vnd.apple.mpegurl") || !isHls) {
-    video.src = src;
-  } else {
-    showPlayerError("This browser cannot play this stream format.");
-  }
-
-  video.play().catch(() => showPlayerNotice("Press play to start. Some browsers block autoplay."));
-}
-
-function showPlayerError(msg){
-  const box = $("#playerMessage");
-  if(box){ box.textContent = msg; box.classList.add("error"); box.hidden = false; }
-}
-function showPlayerNotice(msg){
-  const box = $("#playerMessage");
-  if(box){ box.textContent = msg; box.classList.remove("error"); box.hidden = false; }
-}
-
-function renderPlayer(){
-  const c = state.active;
-  const favs = getFavs();
-  const isFav = c && favs.has(channelId(c));
-  const player = $("#playerPanel");
-  if(!player) return;
-
-  player.innerHTML = c ? `
-    <div class="player-header">
-      <div class="channel-identity">
-        <div class="logo-box">${c.logo ? `<img src="${esc(c.logo)}" alt="">` : `<span>${esc((c.name || "?").slice(0,1))}</span>`}</div>
-        <div>
-          <div class="eyebrow">${esc(c.countryName)} · ${esc(c.group || "General")}</div>
-          <h2>${esc(c.name)}</h2>
-        </div>
-      </div>
-      <div class="player-actions">
-        <button class="pill-btn ${isFav ? "active" : ""}" data-action="fav-active">${isFav ? "Saved ★" : "Save ★"}</button>
-        <a class="pill-btn link-pill" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">Open stream</a>
-      </div>
-    </div>
-    <div class="video-wrap">
-      <video id="videoPlayer" controls playsinline></video>
-      <div id="playerMessage" class="player-message" hidden></div>
-    </div>
-    <p class="small-note">Streams are provided by IPTV-org country playlists. Availability can vary by country, browser, provider and time.</p>
-  ` : `
-    <div class="empty-player">
-      <h2>Choose a channel</h2>
-      <p>Select a country, pick a channel, and it will play here.</p>
-    </div>`;
-}
-
-function renderShell(){
-  document.body.innerHTML = `
-    <div class="app-shell">
-      <header class="topbar">
-        <div class="brand" data-nav="browse">
-          <div class="logo-mark">TV</div>
-          <div><strong>WorldTV</strong><span>Country IPTV Player</span></div>
-        </div>
-        <nav class="nav">
-          <button class="nav-btn ${state.section==="browse" ? "active" : ""}" data-nav="browse">Browse</button>
-          <button class="nav-btn ${state.section==="favourites" ? "active" : ""}" data-nav="favourites">Favourites</button>
-          <button class="nav-btn ${state.section==="recent" ? "active" : ""}" data-nav="recent">Recent</button>
-          <button class="nav-btn ${state.section==="about" ? "active" : ""}" data-nav="about">About</button>
-        </nav>
-      </header>
-      <main>
-        <section id="playerPanel" class="player-panel"></section>
-        <section id="contentPanel"></section>
-      </main>
-    </div>`;
-  renderPlayer();
-
-  if(state.loading){
-    $("#contentPanel").innerHTML = `<section class="loading-card"><div class="loader"></div><h1>Loading ${esc(countryLabel(state.country))}…</h1><p>Fetching the ${esc(state.country==="All" ? "main IPTV-org index" : "country-specific IPTV-org playlist")}.</p></section>`;
-  }
-}
-
-function topControls(){
-  return `<section class="controls-card">
-    <div class="controls-grid">
-      <label><span>Country</span><select id="countrySelect">
-        <option value="All" ${state.country==="All"?"selected":""}>All countries / main index</option>
-        ${COUNTRY_CODES.map(code => `<option value="${esc(code)}" ${state.country===code?"selected":""}>${esc(countryLabel(code))}</option>`).join("")}
-      </select></label>
-      <label><span>Category</span><select id="groupSelect">
-        ${currentGroups().map(g => `<option value="${esc(g)}" ${state.group===g?"selected":""}>${esc(g)}</option>`).join("")}
-      </select></label>
-      <label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category..." value="${esc(state.query)}"></label>
-      <button id="clearFilters" class="pill-btn">Clear</button>
-    </div>
-    <div class="source-line">Source: <a href="${esc(state.currentPlaylistUrl || playlistUrlForCountry(state.country))}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl || playlistUrlForCountry(state.country))}</a></div>
-    ${state.error ? `<div class="warning">${esc(state.error)}</div>` : ""}
-  </section>`;
-}
-
-function channelCard(c){
-  const favs = getFavs();
-  const isFav = favs.has(channelId(c));
-  return `<article class="channel-card">
-    <button class="channel-main" data-action="play" data-id="${esc(channelId(c))}">
-      <div class="logo-box">${c.logo ? `<img src="${esc(c.logo)}" alt="" loading="lazy" onerror="this.remove()">` : `<span>${esc((c.name || "?").slice(0,1))}</span>`}</div>
-      <div>
-        <h3>${esc(c.name)}</h3>
-        <p>${esc(c.countryName)} · ${esc(c.group || "General")}</p>
-      </div>
-    </button>
-    <button class="fav-btn ${isFav ? "active" : ""}" data-action="fav" data-id="${esc(channelId(c))}">★</button>
-  </article>`;
-}
-
-function renderBrowse(){
-  applyFilters();
-  $("#contentPanel").innerHTML = `
-    <section class="hero">
-      <div>
-        <div class="eyebrow">WorldTV v${APP_VERSION}</div>
-        <h1>Choose a country. Watch live TV.</h1>
-        <p>Now using IPTV-org country playlists, not weak country guessing from the big index.</p>
-      </div>
-      <button class="pill-btn" id="refreshPlaylist">Refresh playlist</button>
-    </section>
-    ${topControls()}
-    <section class="result-head"><h2>${state.filtered.length} channels</h2><p>${esc(countryLabel(state.country))}${state.group==="All" ? "" : " · " + esc(state.group)}</p></section>
-    <section class="channel-grid">${state.filtered.map(channelCard).join("") || `<div class="empty-card">No channels found.</div>`}</section>`;
-}
-
-function renderFavourites(){
-  const favs = getFavs();
-  const arr = state.channels.filter(c => favs.has(channelId(c)));
-  $("#contentPanel").innerHTML = `
-    <section class="page-head"><div><h1>Favourites</h1><p>${arr.length} saved channel${arr.length===1?"":"s"} in the currently loaded playlist. Switch country to load other saved-country channels.</p></div></section>
-    <section class="channel-grid">${arr.map(channelCard).join("") || `<div class="empty-card">No favourites in this loaded playlist yet.</div>`}</section>`;
-}
-
-function renderRecent(){
-  const rec = getRecent();
-  const arr = rec.map(r => state.channels.find(c => channelId(c) === r.id) || r).filter(Boolean);
-  $("#contentPanel").innerHTML = `
-    <section class="page-head"><div><h1>Recent</h1><p>Your last watched channels on this device.</p></div></section>
-    <section class="channel-grid">${arr.map(channelCard).join("") || `<div class="empty-card">No recent channels yet.</div>`}</section>`;
-}
-
-function renderAbout(){
-  $("#contentPanel").innerHTML = `
-    <section class="about-card">
-      <h1>About WorldTV</h1>
-      <p>WorldTV is a clean browser player for IPTV-org playlists. v1.1 uses country-specific playlists for better country coverage.</p>
-      <div class="stat-grid">
-        <div><strong>${state.channels.length}</strong><span>loaded channels</span></div>
-        <div><strong>${COUNTRY_CODES.length}</strong><span>country options</span></div>
-        <div><strong>${getFavs().size}</strong><span>favourites</span></div>
-      </div>
-      <div class="notes">
-        <p><strong>Why this changed:</strong> the main index playlist is useful for “all channels”, but it is not the cleanest way to infer country. Country playlists are more reliable for country browsing.</p>
-        <p><strong>Why some channels fail:</strong> streams can be offline, geo-blocked, browser-incompatible, overloaded, or changed by the provider.</p>
-        <p><strong>Main index:</strong> ${esc(INDEX_PLAYLIST_URL)}</p>
-        <p><strong>Country playlist pattern:</strong> ${esc(COUNTRY_PLAYLIST_BASE)}xx.m3u</p>
-      </div>
-    </section>`;
-}
-
-function render(){
-  if(!document.querySelector(".app-shell")) renderShell();
-  renderPlayer();
-  $$(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.nav === state.section));
-  if(state.loading) return;
-  if(state.section === "browse") renderBrowse();
-  if(state.section === "favourites") renderFavourites();
-  if(state.section === "recent") renderRecent();
-  if(state.section === "about") renderAbout();
-}
-
-function findById(key){ return state.channels.find(c => channelId(c) === key); }
-
-function handleClick(e){
-  const nav = e.target.closest("[data-nav]");
-  if(nav){
-    state.section = nav.dataset.nav;
-    render();
-    return;
-  }
-
-  const action = e.target.closest("[data-action]");
-  if(action){
-    const act = action.dataset.action;
-    const key = action.dataset.id;
-    if(act === "play"){
-      const c = findById(key);
-      if(c) playChannel(c);
-    }
-    if(act === "fav"){
-      const c = findById(key);
-      if(c) toggleFav(c);
-    }
-    if(act === "fav-active" && state.active) toggleFav(state.active);
-    return;
-  }
-
-  if(e.target.id === "clearFilters"){
-    state.group = "All";
-    state.query = "";
-    applyFilters();
-    renderBrowse();
-  }
-
-  if(e.target.id === "refreshPlaylist"){
-    loadPlaylist(true);
-  }
-}
-
-function handleInput(e){
-  if(e.target.id === "searchBox"){
-    state.query = e.target.value || "";
-    applyFilters();
-    renderBrowse();
-  }
-}
-
-function handleChange(e){
-  if(e.target.id === "countrySelect"){
-    state.country = e.target.value || "All";
-    localStorage.setItem(STORAGE.country, state.country);
-    state.group = "All";
-    state.query = "";
-    state.active = null;
-    loadPlaylist(true);
-  }
-  if(e.target.id === "groupSelect"){
-    state.group = e.target.value || "All";
-    applyFilters();
-    renderBrowse();
-  }
-}
-
-function boot(){
-  renderShell();
-  document.addEventListener("click", handleClick);
-  document.addEventListener("input", handleInput);
-  document.addEventListener("change", handleChange);
-  if("serviceWorker" in navigator) navigator.serviceWorker.register("./service-worker.js").catch(()=>{});
-  loadPlaylist();
-}
-
-document.addEventListener("DOMContentLoaded", boot);
+const COUNTRY_CODES="AF AL DZ AD AO AR AM AW AU AT AZ BS BH BD BB BY BE BZ BJ BM BT BO BA BW BR BN BG BF BI KH CM CA CV KY CF TD CL CN CO CR HR CU CW CY CZ DK DO EC EG SV EE ET FI FR GE DE GH GR GT HK HU IS IN ID IR IQ IE IL IT JM JP JO KZ KE KR KW KG LA LV LB LT LU MO MK MY MX MD MN ME MA MM NP NL NZ NG NO PK PS PA PY PE PH PL PT PR QA RO RU SA RS SG SK SI ZA ES LK SE CH SY TW TJ TH TN TR UA AE GB US UY UZ VE VN YE".split(" ");
+const STORAGE={favs:"worldtv_favourites_v12",recent:"worldtv_recent_v12",source:"worldtv_source_v12",country:"worldtv_country_v12"};
+const regionNames=typeof Intl!=="undefined"&&Intl.DisplayNames?new Intl.DisplayNames(["en"],{type:"region"}):null;
+const state={sourceKey:localStorage.getItem(STORAGE.source)||"iptv-country",country:localStorage.getItem(STORAGE.country)||"ES",channels:[],filtered:[],group:"All",query:"",section:"browse",active:null,loading:true,error:"",hls:null,dash:null,currentPlaylistUrl:""};
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const safeParse=(k,f)=>{try{const r=localStorage.getItem(k);return r?JSON.parse(r):f}catch{return f}};
+const saveJSON=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const channelId=c=>`${c.sourceKey}::${c.name}::${c.url}`;
+function src(){return SOURCES[state.sourceKey]||SOURCES["iptv-country"]}
+function needsCountry(){return src().type==="country"}
+function countryLabel(code){if(!code||code==="All")return"All countries";if(code==="INT")return"International";try{return regionNames?regionNames.of(code)||code:code}catch{return code}}
+function playlistUrl(){const s=src();return s.type==="country"?s.url.replace("{country}",String(state.country||s.defaultCountry||"ES").toLowerCase()):s.url}
+function getFavs(){return new Set(safeParse(STORAGE.favs,[]))} function setFavs(s){saveJSON(STORAGE.favs,[...s])}
+function getRecent(){return safeParse(STORAGE.recent,[])} function setRecent(a){saveJSON(STORAGE.recent,a.slice(0,40))}
+function toggleFav(c){const f=getFavs(),k=channelId(c);f.has(k)?f.delete(k):f.add(k);setFavs(f);render()}
+function parseAttrs(line){const a={};let m;const re=/([\w-]+)="([^"]*)"/g;while((m=re.exec(line)))a[m[1]]=m[2];return a}
+function classify(url){const u=String(url||"").toLowerCase();if(u.includes(".mpd"))return"dash";if(u.includes(".m3u8"))return"hls";if(/\.(mp4|m4v|webm|ogv)(\?|$)/.test(u))return"file";return"unknown"}
+function inferCountry(attrs,name,source){if(source.type==="country")return String(state.country||source.defaultCountry||"ES").toUpperCase();if(source.forcedCountry)return source.forcedCountry;const ex=attrs["tvg-country"]||attrs.country||attrs.countries||"";const first=ex.split(/[;,]/).map(x=>x.trim().toUpperCase()).find(x=>/^[A-Z]{2}$/.test(x));if(first)return first;const text=norm(`${attrs["group-title"]||""} ${name||""}`);for(const c of COUNTRY_CODES){if(text.includes(norm(countryLabel(c))))return c}return"INT"}
+function parseM3U(text,source){const lines=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean), out=[];let extgrp="";for(let i=0;i<lines.length;i++){const line=lines[i];if(line.startsWith("#EXTGRP:")){extgrp=line.replace("#EXTGRP:","").trim();continue} if(!line.startsWith("#EXTINF"))continue;const attrs=parseAttrs(line),comma=line.indexOf(","),display=comma>=0?line.slice(comma+1).trim():"";let url="";for(let j=i+1;j<Math.min(lines.length,i+10);j++){if(lines[j].startsWith("#EXTGRP:"))extgrp=lines[j].replace("#EXTGRP:","").trim();if(lines[j]&&!lines[j].startsWith("#")){url=lines[j].trim();break}} if(!url||!/^https?:\/\//i.test(url))continue;const name=attrs["tvg-name"]||display||attrs["tvg-id"]||"Unknown channel",group=attrs["group-title"]||extgrp||"General",country=inferCountry(attrs,name,source),streamType=classify(url);out.push({name,group,logo:attrs["tvg-logo"]||"",url,country,countryName:countryLabel(country),tvgId:attrs["tvg-id"]||"",lang:attrs["tvg-language"]||attrs.language||"",sourceKey:state.sourceKey,sourceLabel:source.label,streamType,raw:line});extgrp=""}const seen=new Set();return out.filter(c=>{const k=`${c.name}::${c.url}`;if(seen.has(k))return false;seen.add(k);return true}).sort((a,b)=>a.countryName.localeCompare(b.countryName)||a.group.localeCompare(b.group)||a.name.localeCompare(b.name))}
+async function loadPlaylist(force=false){state.loading=true;state.error="";state.channels=[];state.filtered=[];state.active=null;state.currentPlaylistUrl=playlistUrl();renderShell();try{const r=await fetch(state.currentPlaylistUrl,{cache:force?"reload":"no-store"});if(!r.ok)throw new Error(`Playlist returned ${r.status}`);const text=await r.text();state.channels=parseM3U(text,src());state.loading=false;applyFilters();render()}catch(e){state.loading=false;state.error=`Could not load playlist. Try another source, refresh, or open the source link directly. Details: ${e.message||e}`;render()}}
+function groups(){return["All",...new Set(state.channels.map(c=>c.group||"General"))].sort((a,b)=>a.localeCompare(b))}
+function loadedCountries(){const m=new Map();for(const c of state.channels)m.set(c.country,(m.get(c.country)||0)+1);return[...m.entries()].sort((a,b)=>countryLabel(a[0]).localeCompare(countryLabel(b[0])))}
+function applyFilters(){const q=norm(state.query);state.filtered=state.channels.filter(c=>{const groupOk=state.group==="All"||c.group===state.group;const countryOk=needsCountry()||state.country==="All"||c.country===state.country;const text=norm([c.name,c.group,c.countryName,c.lang,c.tvgId,c.sourceLabel,c.streamType].join(" "));return groupOk&&countryOk&&(!q||text.includes(q))})}
+function addRecent(c){const rec=getRecent().filter(x=>x.id!==channelId(c));rec.unshift({id:channelId(c),sourceKey:c.sourceKey,sourceLabel:c.sourceLabel,name:c.name,country:c.country,countryName:c.countryName,group:c.group,logo:c.logo,url:c.url,streamType:c.streamType,at:new Date().toISOString()});setRecent(rec)}
+function destroyPlayers(){if(state.hls){try{state.hls.destroy()}catch{}state.hls=null}if(state.dash){try{state.dash.reset()}catch{}state.dash=null}}
+function playChannel(c){state.active=c;addRecent(c);renderPlayer();setTimeout(()=>attachPlayer(c),50)}
+function attachPlayer(c){const video=$("#videoPlayer");if(!video||!c)return;destroyPlayers();const sourceUrl=c.url,type=classify(sourceUrl);video.poster="";video.removeAttribute("src");video.load();if(type==="dash"&&window.dashjs){try{const p=dashjs.MediaPlayer().create();state.dash=p;p.initialize(video,sourceUrl,true);p.on(dashjs.MediaPlayer.events.ERROR,()=>showPlayerError("This DASH/MPD stream failed in the browser. Try another channel or open stream."));return}catch{showPlayerError("DASH player failed to initialise. Try opening the stream directly.");return}} if(type==="hls"&&window.Hls&&Hls.isSupported()){const hls=new Hls({lowLatencyMode:true,backBufferLength:60,maxBufferLength:30,enableWorker:true});state.hls=hls;hls.loadSource(sourceUrl);hls.attachMedia(video);hls.on(Hls.Events.ERROR,(_,data)=>{if(data?.fatal){try{hls.destroy();state.hls=null;video.src=sourceUrl;video.play().catch(()=>showPlayerError("This stream failed in HLS.js and native fallback."))}catch{showPlayerError("This stream failed in the browser.")}}})}else video.src=sourceUrl;video.play().catch(()=>showPlayerNotice("Press play to start. Some browsers block autoplay."))}
+function showPlayerError(msg){const b=$("#playerMessage");if(b){b.textContent=msg;b.classList.add("error");b.hidden=false}}
+function showPlayerNotice(msg){const b=$("#playerMessage");if(b){b.textContent=msg;b.classList.remove("error");b.hidden=false}}
+function renderPlayer(){const c=state.active,f=getFavs(),isFav=c&&f.has(channelId(c)),p=$("#playerPanel");if(!p)return;p.innerHTML=c?`<div class="player-header"><div class="channel-identity"><div class="logo-box">${c.logo?`<img src="${esc(c.logo)}" alt="">`:`<span>${esc((c.name||"?").slice(0,1))}</span>`}</div><div><div class="eyebrow">${esc(c.sourceLabel)} · ${esc(c.countryName)} · ${esc(c.group||"General")} · ${esc(c.streamType.toUpperCase())}</div><h2>${esc(c.name)}</h2></div></div><div class="player-actions"><button class="pill-btn ${isFav?"active":""}" data-action="fav-active">${isFav?"Saved ★":"Save ★"}</button><a class="pill-btn link-pill" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">Open stream</a></div></div><div class="video-wrap"><video id="videoPlayer" controls playsinline></video><div id="playerMessage" class="player-message" hidden></div></div><p class="small-note">If a stream fails here but works elsewhere, it may need codecs, headers, DRM, app-level proxying, or player features browsers do not expose.</p>`:`<div class="empty-player"><h2>Choose a channel</h2><p>Select a source, country and channel. The app uses HLS.js, Dash.js or native browser playback depending on the stream.</p></div>`}
+function renderShell(){document.body.innerHTML=`<div class="app-shell"><header class="topbar"><div class="brand" data-nav="browse"><div class="logo-mark">TV</div><div><strong>WorldTV</strong><span>Multi-source IPTV Player</span></div></div><nav class="nav"><button class="nav-btn ${state.section==="browse"?"active":""}" data-nav="browse">Browse</button><button class="nav-btn ${state.section==="favourites"?"active":""}" data-nav="favourites">Favourites</button><button class="nav-btn ${state.section==="recent"?"active":""}" data-nav="recent">Recent</button><button class="nav-btn ${state.section==="about"?"active":""}" data-nav="about">About</button></nav></header><main><section id="playerPanel" class="player-panel"></section><section id="contentPanel"></section></main></div>`;renderPlayer();if(state.loading)$("#contentPanel").innerHTML=`<section class="loading-card"><div class="loader"></div><h1>Loading channels…</h1><p>${esc(src().label)} · ${esc(needsCountry()?countryLabel(state.country):"full source")}</p></section>`}
+function sourceOptions(){return Object.entries(SOURCES).map(([k,s])=>`<option value="${esc(k)}" ${state.sourceKey===k?"selected":""}>${esc(s.label)}</option>`).join("")}
+function countryOptions(){if(needsCountry())return COUNTRY_CODES.map(c=>`<option value="${esc(c)}" ${state.country===c?"selected":""}>${esc(countryLabel(c))}</option>`).join("");const loaded=loadedCountries();return `<option value="All" ${state.country==="All"?"selected":""}>All countries</option>${loaded.map(([c,n])=>`<option value="${esc(c)}" ${state.country===c?"selected":""}>${esc(countryLabel(c))} (${n})</option>`).join("")}`}
+function controls(){return`<section class="controls-card"><div class="controls-grid"><label><span>Source</span><select id="sourceSelect">${sourceOptions()}</select></label><label><span>Country</span><select id="countrySelect">${countryOptions()}</select></label><label><span>Category</span><select id="groupSelect">${groups().map(g=>`<option value="${esc(g)}" ${state.group===g?"selected":""}>${esc(g)}</option>`).join("")}</select></label><label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category, format..." value="${esc(state.query)}"></label><button id="clearFilters" class="pill-btn">Clear</button></div><div class="source-line"><strong>${esc(src().desc)}</strong><br>Source URL: <a href="${esc(state.currentPlaylistUrl||playlistUrl())}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl||playlistUrl())}</a></div>${state.error?`<div class="warning">${esc(state.error)}</div>`:""}</section>`}
+function card(c){const isFav=getFavs().has(channelId(c));return`<article class="channel-card"><button class="channel-main" data-action="play" data-id="${esc(channelId(c))}"><div class="logo-box">${c.logo?`<img src="${esc(c.logo)}" alt="" loading="lazy" onerror="this.remove()">`:`<span>${esc((c.name||"?").slice(0,1))}</span>`}</div><div><h3>${esc(c.name)}</h3><p>${esc(c.countryName)} · ${esc(c.group||"General")} · ${esc(c.streamType.toUpperCase())}</p></div></button><button class="fav-btn ${isFav?"active":""}" data-action="fav" data-id="${esc(channelId(c))}">★</button></article>`}
+function browse(){applyFilters();$("#contentPanel").innerHTML=`<section class="hero"><div><div class="eyebrow">WorldTV v${APP_VERSION}</div><h1>Switch source. Pick country. Watch live TV.</h1><p>Now with multiple playlist sources, HLS support, DASH/MPD support and better stream fallback.</p></div><button class="pill-btn" id="refreshPlaylist">Refresh playlist</button></section>${controls()}<section class="result-head"><h2>${state.filtered.length} channels</h2><p>${esc(src().label)} · ${esc(needsCountry()?countryLabel(state.country):(state.country==="All"?"All countries":countryLabel(state.country)))}${state.group==="All"?"":" · "+esc(state.group)}</p></section><section class="channel-grid">${state.filtered.map(card).join("")||`<div class="empty-card">No channels found.</div>`}</section>`}
+function favourites(){const f=getFavs(),arr=state.channels.filter(c=>f.has(channelId(c)));$("#contentPanel").innerHTML=`<section class="page-head"><div><h1>Favourites</h1><p>${arr.length} saved channel${arr.length===1?"":"s"} in the currently loaded source.</p></div></section><section class="channel-grid">${arr.map(card).join("")||`<div class="empty-card">No favourites in this loaded source yet.</div>`}</section>`}
+function recent(){const arr=getRecent().map(r=>state.channels.find(c=>channelId(c)===r.id)||r).filter(Boolean);$("#contentPanel").innerHTML=`<section class="page-head"><div><h1>Recent</h1><p>Your last watched channels on this device.</p></div></section><section class="channel-grid">${arr.map(card).join("")||`<div class="empty-card">No recent channels yet.</div>`}</section>`}
+function about(){const lc=loadedCountries().length;$("#contentPanel").innerHTML=`<section class="about-card"><h1>About WorldTV</h1><p>WorldTV is a clean browser player for public IPTV playlists. v1.2 adds source switching and DASH/MPD playback support.</p><div class="stat-grid"><div><strong>${state.channels.length}</strong><span>loaded channels</span></div><div><strong>${lc}</strong><span>countries in source</span></div><div><strong>${getFavs().size}</strong><span>favourites</span></div></div><div class="notes"><p><strong>Why another player may play more:</strong> native IPTV apps can support more codecs, headers, redirects, DRM cases or non-browser playback behaviour.</p><p><strong>What v1.2 improves:</strong> multiple sources, full-index mode, country-playlist mode, TDTChannels lists, HLS.js and Dash.js.</p><p><strong>Still normal:</strong> some streams fail because they are offline, geo-blocked, browser-incompatible, overloaded, or changed by the provider.</p></div></section>`}
+function render(){if(!$(".app-shell"))renderShell();renderPlayer();$$(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.nav===state.section));if(state.loading)return;if(state.section==="browse")browse();if(state.section==="favourites")favourites();if(state.section==="recent")recent();if(state.section==="about")about()}
+function findById(k){return state.channels.find(c=>channelId(c)===k)}
+function click(e){const nav=e.target.closest("[data-nav]");if(nav){state.section=nav.dataset.nav;render();return}const act=e.target.closest("[data-action]");if(act){const c=findById(act.dataset.id);if(act.dataset.action==="play"&&c)playChannel(c);if(act.dataset.action==="fav"&&c)toggleFav(c);if(act.dataset.action==="fav-active"&&state.active)toggleFav(state.active);return}if(e.target.id==="clearFilters"){state.group="All";state.query="";if(!needsCountry())state.country="All";applyFilters();browse()}if(e.target.id==="refreshPlaylist")loadPlaylist(true)}
+function input(e){if(e.target.id==="searchBox"){state.query=e.target.value||"";applyFilters();browse()}}
+function change(e){if(e.target.id==="sourceSelect"){state.sourceKey=e.target.value||"iptv-country";localStorage.setItem(STORAGE.source,state.sourceKey);state.country=needsCountry()?(localStorage.getItem(STORAGE.country)||src().defaultCountry||"ES"):"All";state.group="All";state.query="";loadPlaylist(true)} if(e.target.id==="countrySelect"){state.country=e.target.value||"All";localStorage.setItem(STORAGE.country,state.country);state.group="All";state.query="";if(needsCountry())loadPlaylist(true);else{applyFilters();browse()}} if(e.target.id==="groupSelect"){state.group=e.target.value||"All";applyFilters();browse()}}
+function boot(){renderShell();document.addEventListener("click",click);document.addEventListener("input",input);document.addEventListener("change",change);if("serviceWorker" in navigator)navigator.serviceWorker.register("./service-worker.js").catch(()=>{});loadPlaylist()}
+document.addEventListener("DOMContentLoaded",boot);
