@@ -1,31 +1,35 @@
-# WorldTV v1.2 — Multi-source + Better Playback
+# WorldTV v1.2.1 — TDT Source Fix
 
 ## What changed
 
-- Added source switcher
-- Sources:
-  - IPTV-org Country playlists
-  - IPTV-org Full index
-  - TDTChannels TV
-  - TDTChannels TV + Radio
-  - TDTChannels TV M3U8 + MPD
-- Added Dash.js for MPD/DASH playback
-- Kept HLS.js for M3U8 playback
-- Kept native fallback and Open Stream button
-- Better format labelling: HLS / DASH / file / unknown
-- Better parsing for `#EXTGRP`
-- No full playlist localStorage caching
-- Favourites and recent now include source key
-- Cache updated to v1.2
+- Fixed TDTChannels source handling
+- Added TDTChannels GitHub TV catalogue parser
+- Kept official TDT TV and Radio M3U8 sources, but marked that browser CORS may block them
+- Removed unreliable assumed TV+Radio / MPD source URLs
+- Kept IPTV-org country playlists
+- Kept IPTV-org full index
+- Kept HLS.js and Dash.js
+- Better Markdown parsing for TDTChannels TELEVISION.md
+- Cache updated to v1.2.1
 - JavaScript syntax checked successfully
+
+## Recommended TDT source
+
+Use:
+
+`TDTChannels · GitHub TV catalogue`
+
+That source fetches:
+
+`https://raw.githubusercontent.com/LaQuay/TDTChannels/master/TELEVISION.md`
 
 ## Upload
 
 Upload all files to your repo root:
 
 - index.html
-- style-v1-2.css
-- app-v1-2.js
+- style-v1-2-1.css
+- app-v1-2-1.js
 - style.css
 - app.js
 - README.md
