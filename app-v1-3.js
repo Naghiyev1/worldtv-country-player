@@ -1,23 +1,34 @@
 
-const APP_VERSION = "1.2.2";
+const APP_VERSION = "1.3";
 
 const SOURCES = {
+  "auto": {
+    label: "Auto-best source",
+    description: "Chooses the best available route for the selected country. Spain uses TDTChannels; other countries use IPTV-org country playlists.",
+    type: "auto"
+  },
   "iptv-country": {
     label: "IPTV-org · World by country",
-    description: "Best for world TV. Choose a country and load IPTV-org /countries/xx.m3u.",
+    description: "Best general world-TV source. Choose a country and load IPTV-org /countries/xx.m3u.",
     type: "country-m3u",
     url: "https://iptv-org.github.io/iptv/countries/{country}.m3u",
     defaultCountry: "ES"
   },
   "iptv-index": {
     label: "IPTV-org · Full global index",
-    description: "Loads IPTV-org index.m3u. More channels, but slower and messier.",
+    description: "Loads IPTV-org index.m3u. Biggest global list, but slower and messier.",
     type: "global-m3u",
     url: "https://iptv-org.github.io/iptv/index.m3u"
   },
-  "tdt-github-tv": {
+  "free-tv-global": {
+    label: "Free-TV/IPTV · Global backup",
+    description: "Global backup playlist from the Free-TV/IPTV project.",
+    type: "global-m3u",
+    url: "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8"
+  },
+  "tdt-spain": {
     label: "TDTChannels · Spain TV catalogue",
-    description: "Spain-focused backup catalogue from TDTChannels GitHub. This is not a world-TV source.",
+    description: "Spain-focused curated TV catalogue from TDTChannels GitHub. Not a world-TV source.",
     type: "tdt-md",
     forcedCountry: "ES",
     url: "https://raw.githubusercontent.com/LaQuay/TDTChannels/master/TELEVISION.md"
@@ -26,17 +37,18 @@ const SOURCES = {
 
 const COUNTRY_CODES = ["AF", "AL", "DZ", "AD", "AO", "AR", "AM", "AU", "AT", "AZ", "BH", "BD", "BY", "BE", "BO", "BA", "BR", "BG", "CA", "CL", "CN", "CO", "CR", "HR", "CY", "CZ", "DK", "EC", "EG", "EE", "FI", "FR", "GE", "DE", "GR", "HK", "HU", "IS", "IN", "ID", "IR", "IQ", "IE", "IL", "IT", "JP", "JO", "KZ", "KR", "KW", "LV", "LB", "LT", "LU", "MY", "MX", "MD", "ME", "MA", "NL", "NZ", "NG", "NO", "PK", "PS", "PA", "PY", "PE", "PH", "PL", "PT", "QA", "RO", "RU", "SA", "RS", "SG", "SK", "SI", "ZA", "ES", "SE", "CH", "TW", "TH", "TN", "TR", "UA", "AE", "GB", "US", "UY", "UZ", "VE", "VN"];
 const STORAGE = {
-  favs: "worldtv_favourites_v122",
-  recent: "worldtv_recent_v122",
-  source: "worldtv_source_v122",
-  country: "worldtv_country_v122"
+  favs: "worldtv_favourites_v13",
+  recent: "worldtv_recent_v13",
+  source: "worldtv_source_v13",
+  country: "worldtv_country_v13"
 };
 
 const regionNames = typeof Intl !== "undefined" && Intl.DisplayNames ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
 
 const state = {
-  sourceKey: localStorage.getItem(STORAGE.source) || "iptv-country",
+  sourceKey: localStorage.getItem(STORAGE.source) || "auto",
   country: localStorage.getItem(STORAGE.country) || "ES",
+  resolvedSourceKey: "",
   channels: [],
   filtered: [],
   group: "All",
@@ -61,7 +73,7 @@ const channelId = c => `${c.sourceKey}::${c.name}::${c.url}`;
 function getFavs(){ return new Set(safeParse(STORAGE.favs, [])); }
 function setFavs(s){ saveJSON(STORAGE.favs, [...s]); }
 function getRecent(){ return safeParse(STORAGE.recent, []); }
-function setRecent(arr){ saveJSON(STORAGE.recent, arr.slice(0, 40)); }
+function setRecent(arr){ saveJSON(STORAGE.recent, arr.slice(0, 50)); }
 
 function countryLabel(code){
   if(!code || code === "All") return "All countries";
@@ -69,11 +81,24 @@ function countryLabel(code){
   try { return regionNames ? regionNames.of(code) || code : code; } catch { return code; }
 }
 
-function currentSource(){ return SOURCES[state.sourceKey] || SOURCES["iptv-country"]; }
-function sourceNeedsCountry(){ return currentSource().type === "country-m3u"; }
-function sourceIsSpainOnly(){ return Boolean(currentSource().forcedCountry === "ES"); }
+function selectedSource(){ return SOURCES[state.sourceKey] || SOURCES["auto"]; }
+function resolveSourceKey(){
+  if(state.sourceKey !== "auto") return state.sourceKey;
+  return state.country === "ES" ? "tdt-spain" : "iptv-country";
+}
+function resolvedSource(){
+  return SOURCES[resolveSourceKey()] || SOURCES["iptv-country"];
+}
+function sourceNeedsCountry(){
+  const s = resolvedSource();
+  return s.type === "country-m3u" || selectedSource().type === "auto";
+}
+function sourceIsSpainOnly(){
+  const s = resolvedSource();
+  return Boolean(s.forcedCountry === "ES");
+}
 function playlistUrl(){
-  const src = currentSource();
+  const src = resolvedSource();
   if(src.type === "country-m3u") return src.url.replace("{country}", String(state.country || src.defaultCountry || "ES").toLowerCase());
   return src.url;
 }
@@ -92,7 +117,15 @@ function inferCountry(attrs, name, source){
   if(source?.forcedCountry) return source.forcedCountry;
   const explicit = attrs["tvg-country"] || attrs["country"] || attrs["countries"] || "";
   const first = explicit.split(/[;,]/).map(x => x.trim().toUpperCase()).find(x => /^[A-Z]{2}$/.test(x));
-  return first || "INT";
+  if(first) return first;
+
+  const group = norm(attrs["group-title"] || "");
+  const n = norm(name || "");
+  for(const code of COUNTRY_CODES){
+    const label = norm(countryLabel(code));
+    if(group.includes(label) || n.includes(label)) return code;
+  }
+  return "INT";
 }
 
 function classifyType(url){
@@ -103,6 +136,35 @@ function classifyType(url){
   return "unknown";
 }
 
+function makeChannel({name, group, logo, url, country, tvgId, lang}, source){
+  const srcKey = state.resolvedSourceKey || resolveSourceKey();
+  const src = source || resolvedSource();
+  return {
+    name,
+    group: group || "General",
+    logo: logo || "",
+    url,
+    country: country || "INT",
+    countryName: countryLabel(country || "INT"),
+    tvgId: tvgId || "",
+    lang: lang || "",
+    sourceKey: srcKey,
+    sourceMode: state.sourceKey,
+    sourceLabel: src.label,
+    streamType: classifyType(url)
+  };
+}
+
+function dedupeSort(channels){
+  const seen = new Set();
+  return channels.filter(c => {
+    const key = `${c.name}::${c.url}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a,b) => a.countryName.localeCompare(b.countryName) || a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+}
+
 function parseM3U(text, source){
   const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
   const channels = [];
@@ -110,10 +172,12 @@ function parseM3U(text, source){
 
   for(let i=0;i<lines.length;i++){
     const line = lines[i];
+
     if(line.startsWith("#EXTGRP:")){
       pendingExtGrp = line.replace("#EXTGRP:","").trim();
       continue;
     }
+
     if(!line.startsWith("#EXTINF")) continue;
 
     const attrs = parseAttrs(line);
@@ -135,9 +199,20 @@ function parseM3U(text, source){
     const group = attrs["group-title"] || pendingExtGrp || "General";
     const logo = attrs["tvg-logo"] || "";
     const country = inferCountry(attrs, name, source);
-    channels.push(makeChannel({ name, group, logo, url, country, tvgId:attrs["tvg-id"]||"", lang:attrs["tvg-language"]||attrs["language"]||"" }));
+
+    channels.push(makeChannel({
+      name,
+      group,
+      logo,
+      url,
+      country,
+      tvgId: attrs["tvg-id"] || "",
+      lang: attrs["tvg-language"] || attrs["language"] || ""
+    }, source));
+
     pendingExtGrp = "";
   }
+
   return dedupeSort(channels);
 }
 
@@ -155,19 +230,19 @@ function parseTdtMarkdown(text, source){
     }
 
     if(!line || line.startsWith("#") || line.startsWith("Canal ")) continue;
-    if(!line.includes("](") || !(line.includes("m3u8") || line.includes("stream"))) continue;
+    if(!line.includes("](") || !(line.includes("m3u8") || line.includes("stream") || line.includes("mpd"))) continue;
 
     const firstLink = line.match(/\[(m3u8|stream|mpd)[^\]]*\]\((https?:\/\/[^\)]+)\)/i);
     if(!firstLink) continue;
     const url = firstLink[2];
 
-    // Channel name is the text before the first markdown link.
     let name = line.split("[")[0].replace(/\|/g, "").trim();
     name = name.replace(/^-\s*/, "").trim();
-    if(!name || name.length > 80) continue;
+    if(!name || name.length > 90) continue;
 
     const logoMatch = line.match(/\[logo\]\((https?:\/\/[^\)]+)\)/i);
     const epgMatch = line.match(/\)\s+([A-Za-z0-9_.-]+\.TV)\s+/);
+
     channels.push(makeChannel({
       name,
       group,
@@ -176,36 +251,23 @@ function parseTdtMarkdown(text, source){
       country: source.forcedCountry || "ES",
       tvgId: epgMatch ? epgMatch[1] : "",
       lang: "Spanish"
-    }));
+    }, source));
   }
 
   return dedupeSort(channels);
 }
 
-function makeChannel({name, group, logo, url, country, tvgId, lang}){
-  return {
-    name,
-    group: group || "General",
-    logo: logo || "",
-    url,
-    country: country || "INT",
-    countryName: countryLabel(country || "INT"),
-    tvgId: tvgId || "",
-    lang: lang || "",
-    sourceKey: state.sourceKey,
-    sourceLabel: currentSource().label,
-    streamType: classifyType(url)
-  };
-}
+async function fetchPlaylistFor(sourceKey){
+  state.resolvedSourceKey = sourceKey;
+  const src = SOURCES[sourceKey];
+  state.currentPlaylistUrl = playlistUrl();
 
-function dedupeSort(channels){
-  const seen = new Set();
-  return channels.filter(c => {
-    const key = `${c.name}::${c.url}`;
-    if(seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).sort((a,b) => a.countryName.localeCompare(b.countryName) || a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
+  const r = await fetch(state.currentPlaylistUrl, { cache: "no-store" });
+  if(!r.ok) throw new Error(`${src.label} returned ${r.status}`);
+  const text = await r.text();
+
+  if(src.type === "tdt-md") return parseTdtMarkdown(text, src);
+  return parseM3U(text, src);
 }
 
 async function loadPlaylist(force=false){
@@ -214,22 +276,41 @@ async function loadPlaylist(force=false){
   state.channels = [];
   state.filtered = [];
   state.active = null;
+  state.resolvedSourceKey = resolveSourceKey();
   state.currentPlaylistUrl = playlistUrl();
   renderShell();
 
   try{
-    const r = await fetch(state.currentPlaylistUrl, { cache: force ? "reload" : "no-store" });
-    if(!r.ok) throw new Error(`Playlist returned ${r.status}`);
-    const text = await r.text();
+    let channels = await fetchPlaylistFor(state.resolvedSourceKey);
 
-    const src = currentSource();
-    state.channels = src.type === "tdt-md" ? parseTdtMarkdown(text, src) : parseM3U(text, src);
+    // If Auto mode selects TDT Spain but it fails to parse, fall back to IPTV-org Spain.
+    if(state.sourceKey === "auto" && state.country === "ES" && channels.length === 0){
+      state.error = "TDTChannels returned no channels, so Auto mode fell back to IPTV-org Spain.";
+      channels = await fetchPlaylistFor("iptv-country");
+    }
+
+    state.channels = channels;
     state.loading = false;
     applyFilters();
     render();
   }catch(err){
+    if(state.sourceKey === "auto"){
+      try {
+        state.error = `Auto source failed (${err.message || err}), so it fell back to IPTV-org country playlist.`;
+        state.resolvedSourceKey = "iptv-country";
+        const channels = await fetchPlaylistFor("iptv-country");
+        state.channels = channels;
+        state.loading = false;
+        applyFilters();
+        render();
+        return;
+      } catch(fallbackErr) {
+        state.error = `Auto source and fallback both failed. Details: ${fallbackErr.message || fallbackErr}`;
+      }
+    } else {
+      state.error = `Could not load playlist. Try Auto-best source or IPTV-org country mode. Details: ${err.message || err}`;
+    }
     state.loading = false;
-    state.error = `Could not load playlist. Try another source. If this is TDT Official, use TDT GitHub TV instead because browsers may block the official domain. Details: ${err.message || err}`;
     render();
   }
 }
@@ -248,7 +329,7 @@ function applyFilters(){
   const q = norm(state.query);
   state.filtered = state.channels.filter(c => {
     const groupOk = state.group === "All" || c.group === state.group;
-    const countryOk = sourceNeedsCountry() || state.country === "All" || c.country === state.country;
+    const countryOk = sourceNeedsCountry() || sourceIsSpainOnly() || state.country === "All" || c.country === state.country;
     const text = norm([c.name,c.group,c.countryName,c.lang,c.tvgId,c.sourceLabel,c.streamType].join(" "));
     return groupOk && countryOk && (!q || text.includes(q));
   });
@@ -256,7 +337,20 @@ function applyFilters(){
 
 function addRecent(c){
   const rec = getRecent().filter(x => x.id !== channelId(c));
-  rec.unshift({ id:channelId(c), sourceKey:c.sourceKey, sourceLabel:c.sourceLabel, name:c.name, country:c.country, countryName:c.countryName, group:c.group, logo:c.logo, url:c.url, streamType:c.streamType, at:new Date().toISOString() });
+  rec.unshift({
+    id: channelId(c),
+    sourceKey:c.sourceKey,
+    sourceMode:c.sourceMode,
+    sourceLabel:c.sourceLabel,
+    name:c.name,
+    country:c.country,
+    countryName:c.countryName,
+    group:c.group,
+    logo:c.logo,
+    url:c.url,
+    streamType:c.streamType,
+    at:new Date().toISOString()
+  });
   setRecent(rec);
 }
 
@@ -359,7 +453,7 @@ function renderPlayer(){
   ` : `
     <div class="empty-player">
       <h2>Choose a channel</h2>
-      <p>Select a source, country and channel. For world TV use IPTV-org. For Spanish TV, use TDTChannels Spain TV catalogue.</p>
+      <p>Use Auto-best source, choose a country, then pick a channel. Spain gets TDTChannels first; other countries use IPTV-org country playlists.</p>
     </div>`;
 }
 
@@ -369,7 +463,7 @@ function renderShell(){
       <header class="topbar">
         <div class="brand" data-nav="browse">
           <div class="logo-mark">TV</div>
-          <div><strong>WorldTV</strong><span>Multi-source IPTV Player</span></div>
+          <div><strong>WorldTV</strong><span>Source Router IPTV Player</span></div>
         </div>
         <nav class="nav">
           <button class="nav-btn ${state.section==="browse" ? "active" : ""}" data-nav="browse">Browse</button>
@@ -386,7 +480,7 @@ function renderShell(){
   renderPlayer();
 
   if(state.loading){
-    $("#contentPanel").innerHTML = `<section class="loading-card"><div class="loader"></div><h1>Loading channels…</h1><p>${esc(currentSource().label)} · ${esc(sourceNeedsCountry() ? countryLabel(state.country) : "full source")}</p></section>`;
+    $("#contentPanel").innerHTML = `<section class="loading-card"><div class="loader"></div><h1>Loading channels…</h1><p>${esc(selectedSource().label)} → ${esc(resolvedSource().label)} · ${esc(sourceNeedsCountry() || state.sourceKey === "auto" ? countryLabel(state.country) : "global source")}</p></section>`;
   }
 }
 
@@ -395,11 +489,11 @@ function sourceOptions(){
 }
 
 function countryOptions(){
-  if(sourceIsSpainOnly()){
+  if(sourceIsSpainOnly() && state.sourceKey !== "auto"){
     return `<option value="ES" selected>Spain only</option>`;
   }
 
-  if(sourceNeedsCountry()){
+  if(sourceNeedsCountry() || state.sourceKey === "auto"){
     return COUNTRY_CODES.map(code => `<option value="${esc(code)}" ${state.country===code?"selected":""}>${esc(countryLabel(code))}</option>`).join("");
   }
 
@@ -408,10 +502,15 @@ function countryOptions(){
   return `<option value="All" ${state.country==="All"?"selected":""}>All countries</option>${dynamic}`;
 }
 
+function routeBadge(){
+  if(state.sourceKey !== "auto") return "";
+  return `<div class="route-badge">Auto route: <strong>${esc(countryLabel(state.country))}</strong> → <strong>${esc(resolvedSource().label)}</strong></div>`;
+}
+
 function topControls(){
   return `<section class="controls-card">
     <div class="controls-grid enhanced">
-      <label><span>Source</span><select id="sourceSelect">${sourceOptions()}</select></label>
+      <label><span>Source mode</span><select id="sourceSelect">${sourceOptions()}</select></label>
       <label><span>Country</span><select id="countrySelect">${countryOptions()}</select></label>
       <label><span>Category</span><select id="groupSelect">
         ${currentGroups().map(g => `<option value="${esc(g)}" ${state.group===g?"selected":""}>${esc(g)}</option>`).join("")}
@@ -419,7 +518,8 @@ function topControls(){
       <label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category, format..." value="${esc(state.query)}"></label>
       <button id="clearFilters" class="pill-btn">Clear</button>
     </div>
-    <div class="source-line"><strong>${esc(currentSource().description)}</strong><br>Loaded source: <a href="${esc(state.currentPlaylistUrl || playlistUrl())}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl || playlistUrl())}</a></div>
+    ${routeBadge()}
+    <div class="source-line"><strong>${esc(selectedSource().description)}</strong><br>Loaded source: <a href="${esc(state.currentPlaylistUrl || playlistUrl())}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl || playlistUrl())}</a></div>
     ${state.error ? `<div class="warning">${esc(state.error)}</div>` : ""}
   </section>`;
 }
@@ -445,13 +545,13 @@ function renderBrowse(){
     <section class="hero">
       <div>
         <div class="eyebrow">WorldTV v${APP_VERSION}</div>
-        <h1>Switch source. Pick country. Watch live TV.</h1>
-        <p>v1.2.2 cleans up sources: IPTV-org for world TV, TDTChannels as Spain-only backup.</p>
+        <h1>Auto-route sources by country.</h1>
+        <p>Spain uses TDTChannels first. Other countries use IPTV-org country playlists. Free-TV/IPTV is available as a global backup.</p>
       </div>
       <button class="pill-btn" id="refreshPlaylist">Refresh playlist</button>
     </section>
     ${topControls()}
-    <section class="result-head"><h2>${state.filtered.length} channels</h2><p>${esc(currentSource().label)} · ${esc(sourceNeedsCountry() ? countryLabel(state.country) : (state.country==="All" ? "All countries" : countryLabel(state.country)))}${state.group==="All" ? "" : " · " + esc(state.group)}</p></section>
+    <section class="result-head"><h2>${state.filtered.length} channels</h2><p>${esc(resolvedSource().label)} · ${esc(sourceNeedsCountry() || state.sourceKey==="auto" ? countryLabel(state.country) : (state.country==="All" ? "All countries" : countryLabel(state.country)))}${state.group==="All" ? "" : " · " + esc(state.group)}</p></section>
     <section class="channel-grid">${state.filtered.map(channelCard).join("") || `<div class="empty-card">No channels found.</div>`}</section>`;
 }
 
@@ -472,15 +572,15 @@ function renderAbout(){
   $("#contentPanel").innerHTML = `
     <section class="about-card">
       <h1>About WorldTV</h1>
-      <p>WorldTV is a clean browser player for public IPTV playlists. v1.2.2 removes confusing broken TDT official sources and keeps TDTChannels clearly Spain-only.</p>
+      <p>WorldTV is a browser player for public IPTV sources. v1.3 adds source routing: country-specific where useful, global backup where needed.</p>
       <div class="stat-grid">
         <div><strong>${state.channels.length}</strong><span>loaded channels</span></div>
         <div><strong>${loadedCountries}</strong><span>countries in source</span></div>
         <div><strong>${getFavs().size}</strong><span>favourites</span></div>
       </div>
       <div class="notes">
-        <p><strong>TDT note:</strong> TDTChannels is Spain-focused, not a world-TV source. The official TDT M3U links were removed from the main source list because they can be blocked by browser CORS from GitHub Pages.</p>
-        <p><strong>Why another player may play more:</strong> native IPTV apps can support more codecs, headers, redirects, DRM cases or non-browser playback behaviour.</p>
+        <p><strong>Auto-best:</strong> Spain routes to TDTChannels Spain TV catalogue. Other countries route to IPTV-org country playlists.</p>
+        <p><strong>Global backup:</strong> Free-TV/IPTV is included as a separate source because it is not country-router clean, but useful when IPTV-org is weak.</p>
         <p><strong>Still normal:</strong> some streams fail because they are offline, geo-blocked, browser-incompatible, overloaded, or changed by the provider.</p>
       </div>
     </section>`;
@@ -516,7 +616,7 @@ function handleClick(e){
   if(e.target.id === "clearFilters"){
     state.group = "All";
     state.query = "";
-    if(!sourceNeedsCountry()) state.country = "All";
+    if(!sourceNeedsCountry() && state.sourceKey !== "auto") state.country = "All";
     applyFilters();
     renderBrowse();
   }
@@ -534,10 +634,12 @@ function handleInput(e){
 
 function handleChange(e){
   if(e.target.id === "sourceSelect"){
-    state.sourceKey = e.target.value || "iptv-country";
+    state.sourceKey = e.target.value || "auto";
     localStorage.setItem(STORAGE.source, state.sourceKey);
-    const src = currentSource();
-    state.country = src.forcedCountry || (src.type === "country-m3u" ? (localStorage.getItem(STORAGE.country) || src.defaultCountry || "ES") : "All");
+    const src = selectedSource();
+    if(src.forcedCountry) state.country = src.forcedCountry;
+    else if(src.type === "global-m3u") state.country = "All";
+    else state.country = localStorage.getItem(STORAGE.country) || src.defaultCountry || "ES";
     state.group = "All";
     state.query = "";
     state.active = null;
@@ -545,12 +647,13 @@ function handleChange(e){
   }
 
   if(e.target.id === "countrySelect"){
-    state.country = sourceIsSpainOnly() ? "ES" : (e.target.value || (sourceNeedsCountry() ? "ES" : "All"));
+    if(sourceIsSpainOnly() && state.sourceKey !== "auto") state.country = "ES";
+    else state.country = e.target.value || (sourceNeedsCountry() || state.sourceKey === "auto" ? "ES" : "All");
     localStorage.setItem(STORAGE.country, state.country);
     state.group = "All";
     state.query = "";
     state.active = null;
-    if(sourceNeedsCountry()) loadPlaylist(true);
+    if(sourceNeedsCountry() || state.sourceKey === "auto") loadPlaylist(true);
     else { applyFilters(); renderBrowse(); }
   }
 
