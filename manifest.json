@@ -1,16 +1,1 @@
-{
-  "name": "WorldTV \u2014 Multi-source IPTV Player",
-  "short_name": "WorldTV",
-  "description": "Switch IPTV sources, choose country, and watch public streams.",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#07111f",
-  "theme_color": "#07111f",
-  "icons": [
-    {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
-  ]
-}
+{"name":"WorldTV — Source Health Router","short_name":"WorldTV","description":"Switch public IPTV sources, choose country, and route to more stable streams.","start_url":".","display":"standalone","background_color":"#07111f","theme_color":"#07111f","icons":[{"src":"icon.svg","sizes":"any","type":"image/svg+xml"}]}
