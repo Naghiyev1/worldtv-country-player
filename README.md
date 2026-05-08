@@ -1,16 +1,22 @@
-# WorldTV v1.1 — Country Playlist Mode
+# WorldTV v1.2 — Multi-source + Better Playback
 
 ## What changed
 
-- Country selector now loads actual IPTV-org country playlists
-- Example: `https://iptv-org.github.io/iptv/countries/es.m3u`
-- “All countries” still loads the main index playlist
-- Better country coverage
-- No fragile country guessing from channel names
+- Added source switcher
+- Sources:
+  - IPTV-org Country playlists
+  - IPTV-org Full index
+  - TDTChannels TV
+  - TDTChannels TV + Radio
+  - TDTChannels TV M3U8 + MPD
+- Added Dash.js for MPD/DASH playback
+- Kept HLS.js for M3U8 playback
+- Kept native fallback and Open Stream button
+- Better format labelling: HLS / DASH / file / unknown
+- Better parsing for `#EXTGRP`
 - No full playlist localStorage caching
-- Keeps HLS.js playback
-- Keeps favourites and recent channels
-- Cache updated to v1.1
+- Favourites and recent now include source key
+- Cache updated to v1.2
 - JavaScript syntax checked successfully
 
 ## Upload
@@ -18,8 +24,8 @@
 Upload all files to your repo root:
 
 - index.html
-- style-v1-1.css
-- app-v1-1.js
+- style-v1-2.css
+- app-v1-2.js
 - style.css
 - app.js
 - README.md
@@ -27,4 +33,4 @@ Upload all files to your repo root:
 - manifest.json
 - service-worker.js
 
-Then hard refresh.
+Then hard refresh. If the old version remains, clear site data once.
