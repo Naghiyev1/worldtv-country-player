@@ -27,3 +27,20 @@ button,input,select,video{font:inherit}button{cursor:pointer}.app-shell{max-widt
 @media(max-width:520px){.hero h1,.page-head h1,.about-card h1,.loading-card h1{font-size:46px}.logo-box{width:48px;height:48px;border-radius:16px}.channel-main h3{white-space:normal}}
 
 /* v1.2.2 source cleanup: TDT clearly Spain-only, IPTV-org for world TV */
+
+/* v1.3 source router */
+.route-badge{
+  margin-top:12px;
+  display:inline-flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+  border:1px solid rgba(32,170,227,.34);
+  background:rgba(32,170,227,.10);
+  color:#dff7ff;
+  border-radius:999px;
+  padding:9px 12px;
+  font-size:13px;
+  font-weight:850;
+}
+.route-badge strong{color:#fff}
