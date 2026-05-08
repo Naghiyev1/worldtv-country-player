@@ -46,7 +46,106 @@ function applyFilters(){const q=norm(state.query);state.filtered=state.channels.
 function addRecent(c){const rec=getRecent().filter(x=>x.id!==channelId(c));rec.unshift({id:channelId(c),sourceKey:c.sourceKey,sourceMode:c.sourceMode,sourceLabel:c.sourceLabel,name:c.name,country:c.country,countryName:c.countryName,group:c.group,logo:c.logo,url:c.url,streamType:c.streamType,at:new Date().toISOString()});setRecent(rec)}
 function destroyPlayers(){if(state.hls){try{state.hls.destroy()}catch{}state.hls=null}if(state.dash){try{state.dash.reset()}catch{}state.dash=null}}
 function playChannel(c){state.active=c;addRecent(c);renderPlayer();setTimeout(()=>attachPlayer(c),50)}
-function attachPlayer(c){const video=$("#videoPlayer");if(!video||!c)return;destroyPlayers();video.poster="";video.removeAttribute("src");video.load();const type=classifyType(c.url),ok=()=>{markHealth(c,"working");markLastWorking(c);renderPlayerHeaderOnly()},bad=msg=>{markHealth(c,"failed");showPlayerError(msg);renderPlayerHeaderOnly()};video.addEventListener("playing",ok,{once:true});video.addEventListener("error",()=>bad("Browser reported a playback error for this stream."),{once:true});if(type==="DASH"&&window.dashjs){try{const p=dashjs.MediaPlayer().create();state.dash=p;p.initialize(video,c.url,true);p.on(dashjs.MediaPlayer.events.ERROR,()=>bad("This DASH stream failed. Try backup source."));return}catch(e){bad("DASH player failed. Try opening stream directly.");return}}if(type==="HLS"&&window.Hls&&Hls.isSupported()){const hls=new Hls({lowLatencyMode:true,backBufferLength:60,maxBufferLength:30,enableWorker:true});state.hls=hls;hls.loadSource(c.url);hls.attachMedia(video);hls.on(Hls.Events.ERROR,(_,d)=>{if(d?.fatal){try{hls.destroy();state.hls=null;video.src=c.url;video.play().catch(()=>bad("This stream failed in HLS.js and native fallback. Try backup source."))}catch{bad("This stream failed. Try another source.")}}})}else video.src=c.url;video.play().catch(()=>showPlayerNotice("Press play to start. Some browsers block autoplay."))}
+function attachPlayer(c){
+  const video = $("#videoPlayer");
+  if(!video || !c) return;
+
+  destroyPlayers();
+
+  const msgBox = $("#playerMessage");
+  if(msgBox){
+    msgBox.hidden = true;
+    msgBox.textContent = "";
+    msgBox.classList.remove("error");
+  }
+
+  const src = c.url;
+  const type = classifyType(src);
+
+  video.pause();
+  video.removeAttribute("src");
+  video.load();
+
+  const markOk = () => {
+    markHealth(c, "working");
+    markLastWorking(c);
+    renderPlayerHeaderOnly();
+  };
+
+  const playVideo = () => {
+    const p = video.play();
+    if(p && typeof p.catch === "function"){
+      p.catch(() => {
+        // Browser blocked autoplay. Do not show a scary error or change player state.
+        // The native video controls remain usable.
+      });
+    }
+  };
+
+  video.addEventListener("playing", markOk, { once:true });
+
+  if(type === "DASH" && window.dashjs){
+    try{
+      const player = dashjs.MediaPlayer().create();
+      state.dash = player;
+      player.initialize(video, src, false);
+      player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, playVideo);
+      player.on(dashjs.MediaPlayer.events.ERROR, () => {
+        showPlayerError("This DASH/MPD stream failed in the browser. Try another channel or backup source.");
+      });
+      return;
+    }catch(e){
+      showPlayerError("DASH player failed to initialise. Try opening the stream directly.");
+      return;
+    }
+  }
+
+  if(type === "HLS" && window.Hls && Hls.isSupported()){
+    const hls = new Hls({
+      lowLatencyMode: true,
+      backBufferLength: 60,
+      maxBufferLength: 30,
+      enableWorker: true
+    });
+
+    state.hls = hls;
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+      hls.loadSource(src);
+    });
+
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      playVideo();
+    });
+
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if(!data?.fatal) return;
+
+      if(data.type === Hls.ErrorTypes.NETWORK_ERROR){
+        try { hls.startLoad(); return; } catch {}
+      }
+
+      if(data.type === Hls.ErrorTypes.MEDIA_ERROR){
+        try { hls.recoverMediaError(); return; } catch {}
+      }
+
+      showPlayerError("This HLS stream failed in the browser. Try another channel or backup source.");
+    });
+
+    return;
+  }
+
+  // Native fallback: Safari HLS, MP4, WebM, audio streams, unknown direct streams.
+  video.src = src;
+  video.load();
+
+  video.addEventListener("loadedmetadata", playVideo, { once:true });
+  video.addEventListener("error", () => {
+    showPlayerError("The browser could not play this stream directly. Try another channel or backup source.");
+  }, { once:true });
+}
+
 function showPlayerError(msg){const b=$("#playerMessage");if(b){b.textContent=msg;b.classList.add("error");b.hidden=false}}function showPlayerNotice(msg){const b=$("#playerMessage");if(b){b.textContent=msg;b.classList.remove("error");b.hidden=false}}
 function healthLabel(c){const h=healthFor(c);if(h==="working")return`<span class="health-pill working">Worked before</span>`;if(h==="failed")return`<span class="health-pill failed">Failed before</span>`;return`<span class="health-pill unknown">Untested</span>`}function renderPlayerHeaderOnly(){if(state.active)renderPlayer()}
 function renderPlayer(){const c=state.active,f=getFavs(),isFav=c&&f.has(channelId(c)),p=$("#playerPanel");if(!p)return;p.innerHTML=c?`<div class="player-header"><div class="channel-identity"><div class="logo-box">${c.logo?`<img src="${esc(c.logo)}" alt="">`:`<span>${esc((c.name||"?").slice(0,1))}</span>`}</div><div><div class="eyebrow">${esc(c.sourceLabel)} · ${esc(c.countryName)} · ${esc(c.group||"General")} · ${esc(c.streamType)}</div><h2>${esc(c.name)}</h2><div class="player-meta">${healthLabel(c)} <span class="source-quality">${esc(c.sourceQuality)}</span>${c.alternatives?.length?`<span class="source-quality">${c.alternatives.length} alt source${c.alternatives.length===1?"":"s"}</span>`:""}</div></div></div><div class="player-actions"><button class="pill-btn ${isFav?"active":""}" data-action="fav-active">${isFav?"Saved ★":"Save ★"}</button><button class="pill-btn" id="tryBackup">Try backup source</button><a class="pill-btn link-pill" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">Open stream</a></div></div><div class="video-wrap"><video id="videoPlayer" controls playsinline></video><div id="playerMessage" class="player-message" hidden></div></div><p class="small-note">If this stream fails here but works in another player, it may need codecs, headers, redirects, DRM, a proxy, or native-player behaviour browsers do not expose.</p>`:`<div class="empty-player"><h2>Choose a channel</h2><p>Auto mode tries the best source order for the country. Use “Try backup source” if a source is weak.</p></div>`}
