@@ -49,3 +49,18 @@ button,input,select,video{font:inherit}button{cursor:pointer}.app-shell{max-widt
 .player-message{
   pointer-events:none;
 }
+
+/* v1.3.3 stable source + global favourites */
+.controls-grid.v133{
+  grid-template-columns:minmax(180px,250px) minmax(150px,210px) minmax(150px,210px) minmax(150px,220px) 1fr auto auto;
+}
+.toggle-label .pill-btn{
+  width:100%;
+  justify-content:center;
+}
+@media(max-width:1200px){
+  .controls-grid.v133{grid-template-columns:1fr 1fr;}
+}
+@media(max-width:760px){
+  .controls-grid.v133{grid-template-columns:1fr;}
+}
