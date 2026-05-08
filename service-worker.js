@@ -1,5 +1,5 @@
-const CACHE_NAME="worldtv-v1-4-2";
-const APP_SHELL=["./","./index.html","./style-v1-4-2.css","./app-v1-4-2.js","./icon.svg","./manifest.json"];
+const CACHE_NAME="worldtv-v1-3-2-stable";
+const APP_SHELL=["./","./index.html","./style-v1-3-2.css","./app-v1-3-2.js","./icon.svg","./manifest.json"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(APP_SHELL)));self.skipWaiting()});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ns=>Promise.all(ns.filter(n=>n!==CACHE_NAME).map(n=>caches.delete(n)))));self.clients.claim()});
 self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(u.origin!==self.location.origin)return;e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE_NAME).then(cache=>cache.put(e.request,c));return r}).catch(()=>caches.match(e.request)))});
