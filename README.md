@@ -1,22 +1,22 @@
-# WorldTV v1.4 — Source Health Router
+# WorldTV v1.4.1 — Player Stability Fix
 
 ## What changed
 
-- Added source health routing
-- Added Free-TV/IPTV country playlist pattern
-- Kept Free-TV/IPTV global backup
-- Kept IPTV-org country playlists
-- Kept IPTV-org full global index
-- Kept TDTChannels Spain TV catalogue
-- Auto route:
-  - Spain: TDTChannels → IPTV-org Spain → Free-TV country → Free-TV global → IPTV-org full index
-  - Other countries: IPTV-org country → Free-TV country → Free-TV global → IPTV-org full index
-- Added “Try backup source” button
-- Added stream health labels: Untested / Worked before / Failed before
-- Added format filter: All / HLS / DASH / File / Unknown
-- Added route log so users can see which sources were tried
-- Merges duplicate channel names into alternatives
-- Cache updated to v1.4
+- Fixed player stopping after first frame / image
+- Health updates no longer re-render and replace the video element during playback
+- Kept health labels but update them in-place
+- Made HLS.js error handling less aggressive
+- Added HLS network/media recovery attempts
+- Dash.js now uses explicit play after setup
+- Keeps:
+  - Source health router
+  - Try backup source button
+  - IPTV-org country playlists
+  - IPTV-org full global index
+  - Free-TV/IPTV backup
+  - TDTChannels Spain catalogue
+  - Format filter
+- Cache updated to v1.4.1
 - JavaScript syntax checked successfully
 
 ## Upload
@@ -24,8 +24,8 @@
 Upload all files to your repo root:
 
 - index.html
-- style-v1-4.css
-- app-v1-4.js
+- style-v1-4-1.css
+- app-v1-4-1.js
 - style.css
 - app.js
 - README.md
