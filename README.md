@@ -1,13 +1,15 @@
-# WorldTV v1.4.1 — Player Stability Fix
+# WorldTV v1.4.2 — Simple Player Revert
 
 ## What changed
 
-- Fixed player stopping after first frame / image
-- Health updates no longer re-render and replace the video element during playback
-- Kept health labels but update them in-place
-- Made HLS.js error handling less aggressive
-- Added HLS network/media recovery attempts
-- Dash.js now uses explicit play after setup
+- Reverted to a simpler player flow
+- Removed “press play / ready” overlay behaviour
+- Removed early browser error health marking
+- HLS now waits for MANIFEST_PARSED before play
+- DASH now waits for STREAM_INITIALIZED before play
+- Native streams now play after loadedmetadata
+- Player health labels remain, but only update after actual playback starts
+- Player message overlay no longer blocks controls
 - Keeps:
   - Source health router
   - Try backup source button
@@ -16,7 +18,7 @@
   - Free-TV/IPTV backup
   - TDTChannels Spain catalogue
   - Format filter
-- Cache updated to v1.4.1
+- Cache updated to v1.4.2
 - JavaScript syntax checked successfully
 
 ## Upload
@@ -24,8 +26,8 @@
 Upload all files to your repo root:
 
 - index.html
-- style-v1-4-1.css
-- app-v1-4-1.js
+- style-v1-4-2.css
+- app-v1-4-2.js
 - style.css
 - app.js
 - README.md
@@ -33,4 +35,4 @@ Upload all files to your repo root:
 - manifest.json
 - service-worker.js
 
-Then hard refresh. If the old version remains, clear site data once.
+Then clear site data once and reload.
