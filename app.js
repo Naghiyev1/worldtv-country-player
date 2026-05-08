@@ -1,37 +1,23 @@
 
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.2.2";
 
 const SOURCES = {
   "iptv-country": {
-    label: "IPTV-org · Country playlists",
-    description: "Best for choosing a country. Loads /countries/xx.m3u.",
+    label: "IPTV-org · World by country",
+    description: "Best for world TV. Choose a country and load IPTV-org /countries/xx.m3u.",
     type: "country-m3u",
     url: "https://iptv-org.github.io/iptv/countries/{country}.m3u",
     defaultCountry: "ES"
   },
   "iptv-index": {
-    label: "IPTV-org · Full index",
-    description: "Loads IPTV-org index.m3u. More channels, slower and messier.",
+    label: "IPTV-org · Full global index",
+    description: "Loads IPTV-org index.m3u. More channels, but slower and messier.",
     type: "global-m3u",
     url: "https://iptv-org.github.io/iptv/index.m3u"
   },
-  "tdt-official-tv": {
-    label: "TDTChannels · Official TV M3U8",
-    description: "Official TDTChannels TV playlist. May be blocked by browser CORS on some devices.",
-    type: "global-m3u",
-    forcedCountry: "ES",
-    url: "https://www.tdtchannels.com/lists/tv.m3u8"
-  },
-  "tdt-official-radio": {
-    label: "TDTChannels · Official Radio M3U8",
-    description: "Official TDTChannels radio playlist. Audio-only streams may not behave like TV.",
-    type: "global-m3u",
-    forcedCountry: "ES",
-    url: "https://www.tdtchannels.com/lists/radio.m3u8"
-  },
   "tdt-github-tv": {
-    label: "TDTChannels · GitHub TV catalogue",
-    description: "Parses TELEVISION.md from GitHub. Often more fetchable from GitHub Pages.",
+    label: "TDTChannels · Spain TV catalogue",
+    description: "Spain-focused backup catalogue from TDTChannels GitHub. This is not a world-TV source.",
     type: "tdt-md",
     forcedCountry: "ES",
     url: "https://raw.githubusercontent.com/LaQuay/TDTChannels/master/TELEVISION.md"
@@ -40,10 +26,10 @@ const SOURCES = {
 
 const COUNTRY_CODES = ["AF", "AL", "DZ", "AD", "AO", "AR", "AM", "AU", "AT", "AZ", "BH", "BD", "BY", "BE", "BO", "BA", "BR", "BG", "CA", "CL", "CN", "CO", "CR", "HR", "CY", "CZ", "DK", "EC", "EG", "EE", "FI", "FR", "GE", "DE", "GR", "HK", "HU", "IS", "IN", "ID", "IR", "IQ", "IE", "IL", "IT", "JP", "JO", "KZ", "KR", "KW", "LV", "LB", "LT", "LU", "MY", "MX", "MD", "ME", "MA", "NL", "NZ", "NG", "NO", "PK", "PS", "PA", "PY", "PE", "PH", "PL", "PT", "QA", "RO", "RU", "SA", "RS", "SG", "SK", "SI", "ZA", "ES", "SE", "CH", "TW", "TH", "TN", "TR", "UA", "AE", "GB", "US", "UY", "UZ", "VE", "VN"];
 const STORAGE = {
-  favs: "worldtv_favourites_v121",
-  recent: "worldtv_recent_v121",
-  source: "worldtv_source_v121",
-  country: "worldtv_country_v121"
+  favs: "worldtv_favourites_v122",
+  recent: "worldtv_recent_v122",
+  source: "worldtv_source_v122",
+  country: "worldtv_country_v122"
 };
 
 const regionNames = typeof Intl !== "undefined" && Intl.DisplayNames ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
@@ -85,6 +71,7 @@ function countryLabel(code){
 
 function currentSource(){ return SOURCES[state.sourceKey] || SOURCES["iptv-country"]; }
 function sourceNeedsCountry(){ return currentSource().type === "country-m3u"; }
+function sourceIsSpainOnly(){ return Boolean(currentSource().forcedCountry === "ES"); }
 function playlistUrl(){
   const src = currentSource();
   if(src.type === "country-m3u") return src.url.replace("{country}", String(state.country || src.defaultCountry || "ES").toLowerCase());
@@ -372,7 +359,7 @@ function renderPlayer(){
   ` : `
     <div class="empty-player">
       <h2>Choose a channel</h2>
-      <p>Select a source, country and channel. For TDTChannels, try the GitHub TV catalogue first.</p>
+      <p>Select a source, country and channel. For world TV use IPTV-org. For Spanish TV, use TDTChannels Spain TV catalogue.</p>
     </div>`;
 }
 
@@ -408,9 +395,14 @@ function sourceOptions(){
 }
 
 function countryOptions(){
+  if(sourceIsSpainOnly()){
+    return `<option value="ES" selected>Spain only</option>`;
+  }
+
   if(sourceNeedsCountry()){
     return COUNTRY_CODES.map(code => `<option value="${esc(code)}" ${state.country===code?"selected":""}>${esc(countryLabel(code))}</option>`).join("");
   }
+
   const loaded = countriesInLoadedSource();
   const dynamic = loaded.length ? loaded.map(([code,count]) => `<option value="${esc(code)}" ${state.country===code?"selected":""}>${esc(countryLabel(code))} (${count})</option>`).join("") : "";
   return `<option value="All" ${state.country==="All"?"selected":""}>All countries</option>${dynamic}`;
@@ -427,7 +419,7 @@ function topControls(){
       <label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category, format..." value="${esc(state.query)}"></label>
       <button id="clearFilters" class="pill-btn">Clear</button>
     </div>
-    <div class="source-line"><strong>${esc(currentSource().description)}</strong><br>Source URL: <a href="${esc(state.currentPlaylistUrl || playlistUrl())}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl || playlistUrl())}</a></div>
+    <div class="source-line"><strong>${esc(currentSource().description)}</strong><br>Loaded source: <a href="${esc(state.currentPlaylistUrl || playlistUrl())}" target="_blank" rel="noopener noreferrer">${esc(state.currentPlaylistUrl || playlistUrl())}</a></div>
     ${state.error ? `<div class="warning">${esc(state.error)}</div>` : ""}
   </section>`;
 }
@@ -454,7 +446,7 @@ function renderBrowse(){
       <div>
         <div class="eyebrow">WorldTV v${APP_VERSION}</div>
         <h1>Switch source. Pick country. Watch live TV.</h1>
-        <p>v1.2.1 fixes TDTChannels by adding the GitHub TV catalogue parser.</p>
+        <p>v1.2.2 cleans up sources: IPTV-org for world TV, TDTChannels as Spain-only backup.</p>
       </div>
       <button class="pill-btn" id="refreshPlaylist">Refresh playlist</button>
     </section>
@@ -480,14 +472,14 @@ function renderAbout(){
   $("#contentPanel").innerHTML = `
     <section class="about-card">
       <h1>About WorldTV</h1>
-      <p>WorldTV is a clean browser player for public IPTV playlists. v1.2.1 improves TDTChannels handling and keeps source switching.</p>
+      <p>WorldTV is a clean browser player for public IPTV playlists. v1.2.2 removes confusing broken TDT official sources and keeps TDTChannels clearly Spain-only.</p>
       <div class="stat-grid">
         <div><strong>${state.channels.length}</strong><span>loaded channels</span></div>
         <div><strong>${loadedCountries}</strong><span>countries in source</span></div>
         <div><strong>${getFavs().size}</strong><span>favourites</span></div>
       </div>
       <div class="notes">
-        <p><strong>TDT recommendation:</strong> use “TDTChannels · GitHub TV catalogue” first. The official M3U8 URL may be blocked by browser CORS from GitHub Pages.</p>
+        <p><strong>TDT note:</strong> TDTChannels is Spain-focused, not a world-TV source. The official TDT M3U links were removed from the main source list because they can be blocked by browser CORS from GitHub Pages.</p>
         <p><strong>Why another player may play more:</strong> native IPTV apps can support more codecs, headers, redirects, DRM cases or non-browser playback behaviour.</p>
         <p><strong>Still normal:</strong> some streams fail because they are offline, geo-blocked, browser-incompatible, overloaded, or changed by the provider.</p>
       </div>
@@ -545,7 +537,7 @@ function handleChange(e){
     state.sourceKey = e.target.value || "iptv-country";
     localStorage.setItem(STORAGE.source, state.sourceKey);
     const src = currentSource();
-    state.country = src.type === "country-m3u" ? (localStorage.getItem(STORAGE.country) || src.defaultCountry || "ES") : "All";
+    state.country = src.forcedCountry || (src.type === "country-m3u" ? (localStorage.getItem(STORAGE.country) || src.defaultCountry || "ES") : "All");
     state.group = "All";
     state.query = "";
     state.active = null;
@@ -553,7 +545,7 @@ function handleChange(e){
   }
 
   if(e.target.id === "countrySelect"){
-    state.country = e.target.value || (sourceNeedsCountry() ? "ES" : "All");
+    state.country = sourceIsSpainOnly() ? "ES" : (e.target.value || (sourceNeedsCountry() ? "ES" : "All"));
     localStorage.setItem(STORAGE.country, state.country);
     state.group = "All";
     state.query = "";
