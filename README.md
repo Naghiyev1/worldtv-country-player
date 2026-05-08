@@ -1,23 +1,24 @@
-# WorldTV v1.3.2 — Stable Player Rollback
+# WorldTV v1.3.3 — Stable Source + Global Favourites
 
-This build rolls back the player to the simpler stable branch and removes the v1.4 health-router playback logic.
+This build keeps the stable v1.3.2 player and improves source/favourites UX around it.
 
 ## What changed
 
-- Removed source health tracking from playback
-- Removed worked-before / failed-before player logic
-- Removed player re-rendering during playback
-- Removed aggressive playback event handling
-- Restored simple HLS.js / Dash.js / native playback flow
-- Uses new isolated localStorage keys so broken v1.4 state cannot interfere
-- Keeps:
-  - Auto-best source
-  - IPTV-org world by country
-  - IPTV-org full global index
-  - Free-TV global backup
-  - TDTChannels Spain catalogue
-  - Open stream fallback
-- Cache updated to v1.3.2
+- Kept stable player logic from v1.3.2
+- Added IPTV-org language playlists
+- Added IPTV-org category playlists
+- Kept IPTV-org country playlists
+- Kept IPTV-org full global index
+- Kept Free-TV/IPTV global backup
+- Kept TDTChannels Spain catalogue
+- Fixed favourites so they work globally across all sources
+- Favourites page now shows saved channel objects, not only saved channels from the currently loaded list
+- Added mature/adult-labelled channel filter
+- Mature/adult-labelled channels are hidden by default
+- No health tracking
+- No playback re-rendering changes
+- No v1.4 branch code
+- Cache updated to v1.3.3
 - JavaScript syntax checked successfully
 
 ## Upload
@@ -25,8 +26,8 @@ This build rolls back the player to the simpler stable branch and removes the v1
 Upload all files to your repo root:
 
 - index.html
-- style-v1-3-2.css
-- app-v1-3-2.js
+- style-v1-3-3.css
+- app-v1-3-3.js
 - style.css
 - app.js
 - README.md
