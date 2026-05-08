@@ -1,35 +1,35 @@
-# WorldTV v1.2.1 — TDT Source Fix
+# WorldTV v1.2.2 — Source Cleanup
 
 ## What changed
 
-- Fixed TDTChannels source handling
-- Added TDTChannels GitHub TV catalogue parser
-- Kept official TDT TV and Radio M3U8 sources, but marked that browser CORS may block them
-- Removed unreliable assumed TV+Radio / MPD source URLs
-- Kept IPTV-org country playlists
-- Kept IPTV-org full index
-- Kept HLS.js and Dash.js
-- Better Markdown parsing for TDTChannels TELEVISION.md
-- Cache updated to v1.2.1
+- Removed confusing/broken TDTChannels Official TV source from the main source list
+- Removed confusing/broken TDTChannels Official Radio source from the main source list
+- Kept TDTChannels GitHub TV catalogue only
+- Renamed it clearly: `TDTChannels · Spain TV catalogue`
+- TDTChannels is now shown as Spain-only
+- IPTV-org Country playlists remain the main world-TV source
+- IPTV-org Full global index remains available for bigger global browsing
+- Kept HLS.js and Dash.js playback support
+- Cache updated to v1.2.2
 - JavaScript syntax checked successfully
 
-## Recommended TDT source
+## Source logic
 
 Use:
 
-`TDTChannels · GitHub TV catalogue`
+- `IPTV-org · World by country` for proper country browsing
+- `IPTV-org · Full global index` for the biggest global list
+- `TDTChannels · Spain TV catalogue` for Spain-focused channels
 
-That source fetches:
-
-`https://raw.githubusercontent.com/LaQuay/TDTChannels/master/TELEVISION.md`
+TDTChannels is not a world-TV source.
 
 ## Upload
 
 Upload all files to your repo root:
 
 - index.html
-- style-v1-2-1.css
-- app-v1-2-1.js
+- style-v1-2-2.css
+- app-v1-2-2.js
 - style.css
 - app.js
 - README.md
