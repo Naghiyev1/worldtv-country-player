@@ -1,5 +1,5 @@
 
-const APP_VERSION = "1.3.2";
+const APP_VERSION = "1.3.3";
 
 const SOURCES = {
   "auto": {
@@ -13,6 +13,20 @@ const SOURCES = {
     type: "country-m3u",
     url: "https://iptv-org.github.io/iptv/countries/{country}.m3u",
     defaultCountry: "ES"
+  },
+  "iptv-language": {
+    label: "IPTV-org · By language",
+    description: "Loads IPTV-org language playlists. Useful when country lists are weak.",
+    type: "language-m3u",
+    url: "https://iptv-org.github.io/iptv/languages/{language}.m3u",
+    defaultLanguage: "spa"
+  },
+  "iptv-category": {
+    label: "IPTV-org · By category",
+    description: "Loads IPTV-org category playlists such as news, sports, movies, kids and music.",
+    type: "category-m3u",
+    url: "https://iptv-org.github.io/iptv/categories/{category}.m3u",
+    defaultCategory: "news"
   },
   "iptv-index": {
     label: "IPTV-org · Full global index",
@@ -36,11 +50,26 @@ const SOURCES = {
 };
 
 const COUNTRY_CODES = ["AF", "AL", "DZ", "AD", "AO", "AR", "AM", "AU", "AT", "AZ", "BH", "BD", "BY", "BE", "BO", "BA", "BR", "BG", "CA", "CL", "CN", "CO", "CR", "HR", "CY", "CZ", "DK", "EC", "EG", "EE", "FI", "FR", "GE", "DE", "GR", "HK", "HU", "IS", "IN", "ID", "IR", "IQ", "IE", "IL", "IT", "JP", "JO", "KZ", "KR", "KW", "LV", "LB", "LT", "LU", "MY", "MX", "MD", "ME", "MA", "NL", "NZ", "NG", "NO", "PK", "PS", "PA", "PY", "PE", "PH", "PL", "PT", "QA", "RO", "RU", "SA", "RS", "SG", "SK", "SI", "ZA", "ES", "SE", "CH", "TW", "TH", "TN", "TR", "UA", "AE", "GB", "US", "UY", "UZ", "VE", "VN"];
+
+const LANGUAGE_OPTIONS = [
+  ["spa","Spanish"], ["eng","English"], ["fra","French"], ["deu","German"], ["ita","Italian"],
+  ["por","Portuguese"], ["jpn","Japanese"], ["zho","Chinese"], ["ara","Arabic"], ["rus","Russian"],
+  ["kor","Korean"], ["tur","Turkish"], ["hin","Hindi"]
+];
+
+const CATEGORY_OPTIONS = [
+  ["news","News"], ["sports","Sports"], ["movies","Movies"], ["series","Series"], ["documentary","Documentary"],
+  ["kids","Kids"], ["music","Music"], ["entertainment","Entertainment"], ["business","Business"],
+  ["education","Education"], ["lifestyle","Lifestyle"], ["general","General"]
+];
+
+const MATURE_TERMS = ["adult","xxx","18+","18 plus","erotic","erotica","porn","porno","sex","sexy"];
+
 const STORAGE = {
-  favs: "worldtv_favourites_v132",
-  recent: "worldtv_recent_v132",
-  source: "worldtv_source_v132",
-  country: "worldtv_country_v132"
+  favs: "worldtv_favourites_v133",
+  recent: "worldtv_recent_v133",
+  source: "worldtv_source_v133",
+  country: "worldtv_country_v133"
 };
 
 const regionNames = typeof Intl !== "undefined" && Intl.DisplayNames ? new Intl.DisplayNames(["en"], { type: "region" }) : null;
@@ -48,6 +77,9 @@ const regionNames = typeof Intl !== "undefined" && Intl.DisplayNames ? new Intl.
 const state = {
   sourceKey: localStorage.getItem(STORAGE.source) || "auto",
   country: localStorage.getItem(STORAGE.country) || "ES",
+  language: localStorage.getItem("worldtv_language_v133") || "spa",
+  category: localStorage.getItem("worldtv_category_v133") || "news",
+  hideMature: localStorage.getItem("worldtv_hide_mature_v133") !== "false",
   resolvedSourceKey: "",
   channels: [],
   filtered: [],
@@ -93,6 +125,8 @@ function sourceNeedsCountry(){
   const s = resolvedSource();
   return s.type === "country-m3u" || selectedSource().type === "auto";
 }
+function sourceNeedsLanguage(){ return resolvedSource().type === "language-m3u"; }
+function sourceNeedsCategory(){ return resolvedSource().type === "category-m3u"; }
 function sourceIsSpainOnly(){
   const s = resolvedSource();
   return Boolean(s.forcedCountry === "ES");
@@ -100,9 +134,51 @@ function sourceIsSpainOnly(){
 function playlistUrl(){
   const src = resolvedSource();
   if(src.type === "country-m3u") return src.url.replace("{country}", String(state.country || src.defaultCountry || "ES").toLowerCase());
+  if(src.type === "language-m3u") return src.url.replace("{language}", String(state.language || src.defaultLanguage || "spa").toLowerCase());
+  if(src.type === "category-m3u") return src.url.replace("{category}", String(state.category || src.defaultCategory || "news").toLowerCase());
   return src.url;
 }
-function toggleFav(c){ const favs=getFavs(); const key=channelId(c); favs.has(key) ? favs.delete(key) : favs.add(key); setFavs(favs); render(); }
+function getFavObjects(){ return safeParse(STORAGE.favs + "_objects", []); }
+function setFavObjects(arr){ saveJSON(STORAGE.favs + "_objects", arr); }
+
+function compactChannel(c){
+  return {
+    id: channelId(c),
+    name: c.name,
+    group: c.group,
+    logo: c.logo,
+    url: c.url,
+    country: c.country,
+    countryName: c.countryName,
+    tvgId: c.tvgId,
+    lang: c.lang,
+    sourceKey: c.sourceKey,
+    sourceMode: c.sourceMode,
+    sourceLabel: c.sourceLabel,
+    streamType: c.streamType,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function toggleFav(c){
+  const favs = getFavs();
+  const key = channelId(c);
+  let objects = getFavObjects().filter(x => x.id !== key);
+  if(favs.has(key)){
+    favs.delete(key);
+  } else {
+    favs.add(key);
+    objects.unshift(compactChannel(c));
+  }
+  setFavs(favs);
+  setFavObjects(objects);
+  render();
+}
+
+function isMatureChannel(c){
+  const text = norm([c.name, c.group, c.tvgId, c.lang].join(" "));
+  return MATURE_TERMS.some(t => text.includes(norm(t)));
+}
 
 function parseAttrs(line){
   const attrs = {};
@@ -545,6 +621,20 @@ function countryOptions(){
   return `<option value="All" ${state.country==="All"?"selected":""}>All countries</option>${dynamic}`;
 }
 
+function languageOptions(){
+  return LANGUAGE_OPTIONS.map(([code,label]) => `<option value="${esc(code)}" ${state.language===code?"selected":""}>${esc(label)}</option>`).join("");
+}
+
+function categoryOptions(){
+  return CATEGORY_OPTIONS.map(([code,label]) => `<option value="${esc(code)}" ${state.category===code?"selected":""}>${esc(label)}</option>`).join("");
+}
+
+function extraSourceControl(){
+  if(sourceNeedsLanguage()) return `<label><span>Language</span><select id="languageSelect">${languageOptions()}</select></label>`;
+  if(sourceNeedsCategory()) return `<label><span>Category list</span><select id="categoryListSelect">${categoryOptions()}</select></label>`;
+  return `<label><span>Route option</span><select disabled><option>Default</option></select></label>`;
+}
+
 function routeBadge(){
   if(state.sourceKey !== "auto") return "";
   return `<div class="route-badge">Auto route: <strong>${esc(countryLabel(state.country))}</strong> → <strong>${esc(resolvedSource().label)}</strong></div>`;
@@ -552,13 +642,15 @@ function routeBadge(){
 
 function topControls(){
   return `<section class="controls-card">
-    <div class="controls-grid enhanced">
+    <div class="controls-grid enhanced v133">
       <label><span>Source mode</span><select id="sourceSelect">${sourceOptions()}</select></label>
       <label><span>Country</span><select id="countrySelect">${countryOptions()}</select></label>
-      <label><span>Category</span><select id="groupSelect">
+      ${extraSourceControl()}
+      <label><span>Category filter</span><select id="groupSelect">
         ${currentGroups().map(g => `<option value="${esc(g)}" ${state.group===g?"selected":""}>${esc(g)}</option>`).join("")}
       </select></label>
-      <label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category, format..." value="${esc(state.query)}"></label>
+      <label><span>Search</span><input id="searchBox" type="search" placeholder="Search channel, category, source..." value="${esc(state.query)}"></label>
+      <label class="toggle-label"><span>Safety</span><button type="button" id="matureToggle" class="pill-btn ${state.hideMature ? "active" : ""}">${state.hideMature ? "Mature hidden" : "Mature shown"}</button></label>
       <button id="clearFilters" class="pill-btn">Clear</button>
     </div>
     ${routeBadge()}
@@ -588,8 +680,8 @@ function renderBrowse(){
     <section class="hero">
       <div>
         <div class="eyebrow">WorldTV v${APP_VERSION}</div>
-        <h1>Auto-route sources by country.</h1>
-        <p>Spain uses TDTChannels first. Other countries use IPTV-org country playlists. Free-TV/IPTV is available as a global backup.</p>
+        <h1>Stable sources, global favourites.</h1>
+        <p>Favourites now work across sources. Added IPTV-org language/category playlists and a mature-content filter.</p>
       </div>
       <button class="pill-btn" id="refreshPlaylist">Refresh playlist</button>
     </section>
@@ -599,9 +691,10 @@ function renderBrowse(){
 }
 
 function renderFavourites(){
-  const favs = getFavs();
-  const arr = state.channels.filter(c => favs.has(channelId(c)));
-  $("#contentPanel").innerHTML = `<section class="page-head"><div><h1>Favourites</h1><p>${arr.length} saved channel${arr.length===1?"":"s"} in the currently loaded source.</p></div></section><section class="channel-grid">${arr.map(channelCard).join("") || `<div class="empty-card">No favourites in this loaded source yet.</div>`}</section>`;
+  const arr = getFavObjects();
+  $("#contentPanel").innerHTML = `
+    <section class="page-head"><div><h1>Favourites</h1><p>${arr.length} saved channel${arr.length===1?"":"s"} across all sources.</p></div></section>
+    <section class="channel-grid">${arr.map(channelCard).join("") || `<div class="empty-card">No favourites yet. Save channels with the star button.</div>`}</section>`;
 }
 
 function renderRecent(){
@@ -615,7 +708,7 @@ function renderAbout(){
   $("#contentPanel").innerHTML = `
     <section class="about-card">
       <h1>About WorldTV</h1>
-      <p>WorldTV is a browser player for public IPTV sources. v1.3 adds source routing: country-specific where useful, global backup where needed.</p>
+      <p>WorldTV is a browser player for public IPTV sources. v1.3.3 keeps the stable player and improves sources, favourites and filtering.</p>
       <div class="stat-grid">
         <div><strong>${state.channels.length}</strong><span>loaded channels</span></div>
         <div><strong>${loadedCountries}</strong><span>countries in source</span></div>
@@ -640,7 +733,9 @@ function render(){
   if(state.section === "about") renderAbout();
 }
 
-function findById(key){ return state.channels.find(c => channelId(c) === key); }
+function findById(key){
+  return state.channels.find(c => channelId(c) === key) || getFavObjects().find(c => c.id === key || channelId(c) === key);
+}
 
 function handleClick(e){
   const nav = e.target.closest("[data-nav]");
@@ -681,7 +776,7 @@ function handleChange(e){
     localStorage.setItem(STORAGE.source, state.sourceKey);
     const src = selectedSource();
     if(src.forcedCountry) state.country = src.forcedCountry;
-    else if(src.type === "global-m3u") state.country = "All";
+    else if(src.type === "global-m3u" || src.type === "language-m3u" || src.type === "category-m3u") state.country = "All";
     else state.country = localStorage.getItem(STORAGE.country) || src.defaultCountry || "ES";
     state.group = "All";
     state.query = "";
@@ -704,6 +799,24 @@ function handleChange(e){
     state.group = e.target.value || "All";
     applyFilters();
     renderBrowse();
+  }
+
+  if(e.target.id === "languageSelect"){
+    state.language = e.target.value || "spa";
+    localStorage.setItem("worldtv_language_v133", state.language);
+    state.group = "All";
+    state.query = "";
+    state.active = null;
+    loadPlaylist(true);
+  }
+
+  if(e.target.id === "categoryListSelect"){
+    state.category = e.target.value || "news";
+    localStorage.setItem("worldtv_category_v133", state.category);
+    state.group = "All";
+    state.query = "";
+    state.active = null;
+    loadPlaylist(true);
   }
 }
 
