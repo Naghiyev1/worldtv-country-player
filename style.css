@@ -25,3 +25,5 @@ button,input,select,video{font:inherit}button{cursor:pointer}.app-shell{max-widt
 @media(max-width:1100px){.channel-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.controls-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.app-shell{padding:12px}.topbar{align-items:flex-start;flex-direction:column}.nav{width:100%;justify-content:flex-start}.hero,.page-head,.about-card,.loading-card{align-items:flex-start;flex-direction:column;padding:22px;border-radius:26px}.player-header{align-items:flex-start;flex-direction:column}.player-actions{justify-content:flex-start}.controls-grid{grid-template-columns:1fr}.channel-grid{grid-template-columns:1fr}.stat-grid{grid-template-columns:1fr}.result-head{align-items:flex-start;flex-direction:column}}
 @media(max-width:520px){.hero h1,.page-head h1,.about-card h1,.loading-card h1{font-size:46px}.logo-box{width:48px;height:48px;border-radius:16px}.channel-main h3{white-space:normal}}
+
+/* v1.2.2 source cleanup: TDT clearly Spain-only, IPTV-org for world TV */
